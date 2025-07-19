@@ -59,11 +59,8 @@ byte_reset:
     jmp y--, byte_loop     ; BYTE COUNT Loop back for the next byte
 
     set pins, 0       [28] ; Second half of packet end bit
-    ;set pins, 1       [28] ; Second half of packet end bit
     set pins, 1       [12] ; Start Railcom quarter-wave
     irq set 0              ; Trigger the Railcom decoder
-    ;irq wait 0              ; Trigger the Railcom decoder
-    ;set pins, 0       [12] ; Start Railcom quarter-wave
     wait 1 irq 1           ; Wait for the Railcom cutout to end
 
 .wrap
