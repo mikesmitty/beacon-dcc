@@ -31,17 +31,16 @@ preamble:
 
     ; Pull the next encoded start packet from the FIFO
     pull noblock           ; Will receive idle packet from x if FIFO is empty
-    out y, 8               ; BYTE COUNT Store the byte count of the message in x
-    jmp byte_reset         ; BYTE COUNT Jump to the byte loop reset
+    out y, 8               ; Store the byte count of the message in y
+    jmp byte_reset         ; Jump to the byte loop reset
 
 byte_loop:
-    mov isr, y             ; BYTE COUNT Store the bytes remaining in the ISR
+    mov isr, y             ; Store the bytes remaining in the ISR
     jmp mid_zero      [15] ; Jump to the middle section of the separator byte
 
 bit_loop:
-    out y, 1               ; BYTE COUNT Pull an output bit to y
-    jmp y--, short_low     ; BYTE_COUNT 
-
+    out y, 1               ; Pull an output bit to y
+    jmp y--, short_low     ; Short-circuit the middle for a 1-bit
 mid_zero:
     ; Add the extra duration for a zero bit to the middle section
     nop               [28] ; Zero high part 2
@@ -52,12 +51,12 @@ short_low:
 
 new_bit:
     set pins, 1       [25] ; High half-wave (starting new bit)
-    jmp x--, bit_loop      ; BIT LOOP Loop back for the next bit
-    mov y, isr        [2]  ; BYTE COUNT Restore the bytes remaining counter from the ISR
+    jmp x--, bit_loop      ; Loop back for the next bit
+    mov y, isr        [2]  ; Restore the bytes remaining counter from the ISR
 
 byte_reset:
-    set x, 8               ; BIT LOOP Set y to 8 for the next byte loop
-    jmp y--, byte_loop     ; BYTE COUNT Loop back for the next byte
+    set x, 8               ; Set x to 8 for the next byte loop
+    jmp y--, byte_loop     ; Loop back for the next byte
 
     set pins, 0       [28] ; Second half of packet end bit
     set pins, 1       [12] ; Start Railcom quarter-wave
