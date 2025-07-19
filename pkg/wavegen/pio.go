@@ -41,7 +41,7 @@ func (w *Wavegen) initPIO(sp, bp shared.Pin) error {
 	return nil
 }
 
-func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
+func (w *Wavegen) initSM(pioNum int) (pio.StateMachine, *pio.PIO, error) {
 	var sm pio.StateMachine
 	var err error
 
@@ -53,12 +53,21 @@ func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
 	case 2:
 		// TODO: Enable PIO2 support when available
 		// sm, err = pio.PIO2.ClaimStateMachine()
-		return errors.New("PIO2 not yet supported")
+		return sm, sm.PIO(), errors.New("PIO2 not yet supported")
 	}
+	if err != nil {
+		return sm, sm.PIO(), err
+	}
+	Pio := sm.PIO()
+
+	return sm, Pio, nil
+}
+
+func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
+	sm, Pio, err := w.initSM(pioNum)
 	if err != nil {
 		return err
 	}
-	Pio := sm.PIO()
 
 	offset, err := Pio.AddProgram(wavegenInstructions, wavegenOrigin)
 	if err != nil {
@@ -100,23 +109,10 @@ func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
 }
 
 func (w *Wavegen) initCutoutPIO(pioNum int, brakePin machine.Pin) error {
-	var sm pio.StateMachine
-	var err error
-
-	switch pioNum {
-	case 0:
-		sm, err = pio.PIO0.ClaimStateMachine()
-	case 1:
-		sm, err = pio.PIO1.ClaimStateMachine()
-	case 2:
-		// TODO: Enable PIO2 support when available
-		// sm, err = pio.PIO2.ClaimStateMachine()
-		return errors.New("PIO2 not yet supported")
-	}
+	sm, Pio, err := w.initSM(pioNum)
 	if err != nil {
 		return err
 	}
-	Pio := sm.PIO()
 
 	offset, err := Pio.AddProgram(cutoutInstructions, cutoutOrigin)
 	if err != nil {
