@@ -9,7 +9,7 @@ const smFreq = 500_000
 // wavegen
 
 const wavegenWrapTarget = 0
-const wavegenWrap = 29
+const wavegenWrap = 30
 
 var wavegenInstructions = []uint16{
 		//     .wrap_target
@@ -41,8 +41,9 @@ var wavegenInstructions = []uint16{
 		0xe028, // 25: set    x, 8                       
 		0x008e, // 26: jmp    y--, 14                    
 		0xfc00, // 27: set    pins, 0                [28]
-		0xea01, // 28: set    pins, 1                [10]
-		0xc020, // 29: irq    wait 0                     
+		0xec01, // 28: set    pins, 1                [12]
+		0xc000, // 29: irq    nowait 0                   
+		0x20c1, // 30: wait   1 irq, 1                   
 		//     .wrap
 }
 const wavegenOrigin = -1

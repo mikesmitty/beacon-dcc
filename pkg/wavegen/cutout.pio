@@ -1,0 +1,30 @@
+
+.program cutout
+
+.pio_version 1
+
+.wrap_target
+
+wait 1 irq prev 0      ; Wait for the Railcom cutout to begin
+set pins, 1       [31] ; Fake cutout duration
+nop               [31] ; Fake cutout duration
+nop               [31] ; Fake cutout duration
+nop               [31] ; Fake cutout duration
+nop               [31] ; Fake cutout duration
+nop               [31] ; Fake cutout duration
+nop               [22] ; Fake cutout duration
+set pins, 0            ; Fake cutout duration
+irq prev 1             ; Return to signal generation
+
+.wrap
+
+% go {
+//go:build rp
+
+package wavegen
+
+import (
+	pio "github.com/tinygo-org/pio/rp2-pio"
+)
+
+%}
