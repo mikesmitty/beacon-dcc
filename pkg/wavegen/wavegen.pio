@@ -1,0 +1,78 @@
+; DCC Command Station Waveform Generator
+; This PIO program generates the DCC waveform for a command station.
+; It handles the preamble, message start, idle packets, and bit generation.
+;
+; The input format is an 8 bit number containing the number of bytes in the message,
+; followed by the data bits. For example, the standard idle packet is 0x3FF00FF
+; 3 for the length, followed by 11111111 00000000 11111111
+; The message start bit, byte terminating bits, and the packet end bit are added automatically.
+; If the FIFO is empty the statemachine will send idle packets until stopped.
+
+.program wavegen
+
+.wrap_target
+
+set y, 15              ; Set the preamble length
+
+preamble:
+    set pins, 1       [28] ; Set pin high for the preamble
+    set pins, 0       [27] ; Set pin low for the preamble
+    jmp y--, preamble
+
+    ; Message start bit begins with a high half-wave
+    set pins, 1
+
+    ; Generate an idle packet (0x3FF00FF) in case the FIFO is empty
+    mov x, ~NULL           ; Make x all 1s
+    in NULL, 6             ; Byte 1
+    in x, 10               ; Byte 1-2
+    in NULL, 8             ; Byte 3
+    in x, 8                ; Byte 4
+    mov x, isr             ; Put the pattern into x as the default pull value
+
+    ; Pull the next encoded start packet from the FIFO
+    pull noblock           ; Will receive idle packet from x if FIFO is empty
+    out y, 8               ; BYTE COUNT Store the byte count of the message in x
+    jmp byte_reset         ; BYTE COUNT Jump to the byte loop reset
+
+byte_loop:
+    mov isr, y             ; BYTE COUNT Store the bytes remaining in the ISR
+    jmp mid_zero      [15] ; Jump to the middle section of the separator byte
+
+bit_loop:
+    set pins, 1       [26] ; High half-wave
+    out y, 1               ; BYTE COUNT Pull an output bit to y
+    jmp y--, short_low     ; BYTE_COUNT 
+
+mid_zero:
+    ; Add the extra duration for a zero bit to the middle section
+    nop               [28] ; Zero high part 2
+    set pins, 0       [28] ; Zero low part 1
+
+short_low:
+    set pins, 0       [27] ; Low half-wave
+    jmp x--, bit_loop      ; BIT LOOP Loop back for the next bit
+    set pins, 1       [27]
+    mov y, isr             ; BYTE COUNT Restore the bytes remaining counter from the ISR
+
+byte_reset:
+    set x, 8               ; BIT LOOP Set y to 8 for the next byte loop
+    jmp y--, byte_loop     ; BYTE COUNT Loop back for the next byte
+
+    set pins, 0       [28] ; Second half of packet end bit
+    set pins, 1       [10] ; Start Railcom quarter-wave
+    irq wait 0             ; Wait for the Railcom period to end
+
+.wrap
+
+% go {
+//go:build rp
+
+package wavegen
+
+import (
+	pio "github.com/tinygo-org/pio/rp2-pio"
+)
+
+const smFreq = 500_000
+%}
