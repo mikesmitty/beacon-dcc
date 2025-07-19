@@ -9,7 +9,7 @@ const smFreq = 500_000
 // wavegen
 
 const wavegenWrapTarget = 0
-const wavegenWrap = 30
+const wavegenWrap = 29
 
 var wavegenInstructions = []uint16{
 		//     .wrap_target
@@ -26,24 +26,23 @@ var wavegenInstructions = []uint16{
 		0xa026, // 10: mov    x, isr                     
 		0x8080, // 11: pull   noblock                    
 		0x6048, // 12: out    y, 8                       
-		0x0019, // 13: jmp    25                         
+		0x0018, // 13: jmp    24                         
 		0xa0c2, // 14: mov    isr, y                     
-		0x0f13, // 15: jmp    19                     [15]
-		0xfa01, // 16: set    pins, 1                [26]
-		0x6041, // 17: out    y, 1                       
-		0x0095, // 18: jmp    y--, 21                    
-		0xbc42, // 19: nop                           [28]
+		0x0f12, // 15: jmp    18                     [15]
+		0x6041, // 16: out    y, 1                       
+		0x0094, // 17: jmp    y--, 20                    
+		0xbc42, // 18: nop                           [28]
+		0xfc00, // 19: set    pins, 0                [28]
 		0xfc00, // 20: set    pins, 0                [28]
-		0xfb00, // 21: set    pins, 0                [27]
+		0xf901, // 21: set    pins, 1                [25]
 		0x0050, // 22: jmp    x--, 16                    
-		0xfb01, // 23: set    pins, 1                [27]
-		0xa046, // 24: mov    y, isr                     
-		0xe028, // 25: set    x, 8                       
-		0x008e, // 26: jmp    y--, 14                    
-		0xfc00, // 27: set    pins, 0                [28]
-		0xec01, // 28: set    pins, 1                [12]
-		0xc000, // 29: irq    nowait 0                   
-		0x20c1, // 30: wait   1 irq, 1                   
+		0xa246, // 23: mov    y, isr                 [2] 
+		0xe028, // 24: set    x, 8                       
+		0x008e, // 25: jmp    y--, 14                    
+		0xfc00, // 26: set    pins, 0                [28]
+		0xec01, // 27: set    pins, 1                [12]
+		0xc000, // 28: irq    nowait 0                   
+		0x20c1, // 29: wait   1 irq, 1                   
 		//     .wrap
 }
 const wavegenOrigin = -1

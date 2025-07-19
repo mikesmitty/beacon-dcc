@@ -39,7 +39,6 @@ byte_loop:
     jmp mid_zero      [15] ; Jump to the middle section of the separator byte
 
 bit_loop:
-    set pins, 1       [26] ; High half-wave
     out y, 1               ; BYTE COUNT Pull an output bit to y
     jmp y--, short_low     ; BYTE_COUNT 
 
@@ -49,10 +48,12 @@ mid_zero:
     set pins, 0       [28] ; Zero low part 1
 
 short_low:
-    set pins, 0       [27] ; Low half-wave
+    set pins, 0       [28] ; Low half-wave
+
+new_bit:
+    set pins, 1       [25] ; High half-wave (starting new bit)
     jmp x--, bit_loop      ; BIT LOOP Loop back for the next bit
-    set pins, 1       [27]
-    mov y, isr             ; BYTE COUNT Restore the bytes remaining counter from the ISR
+    mov y, isr        [2]  ; BYTE COUNT Restore the bytes remaining counter from the ISR
 
 byte_reset:
     set x, 8               ; BIT LOOP Set y to 8 for the next byte loop
