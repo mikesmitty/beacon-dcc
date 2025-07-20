@@ -30,12 +30,12 @@
 
 set y, 15                  ; Set the preamble length to 16 (n-1)
 preamble:
-    set pins, 1       [28] ; Set pin high for the preamble
-    set pins, 0       [27] ; Set pin low for the preamble
+    set pins, 0b11    [28] ; Set pin high for the preamble
+    set pins, 0b00    [27] ; Set pin low for the preamble
     jmp y--, preamble
 
     ; Message start bit begins with a high half-wave
-    set pins, 1
+    set pins, 0b11
 
     ; Generate an idle packet (0x3FF00FF) in case the FIFO is empty
     mov x, ~NULL           ; Make x all 1s
@@ -60,13 +60,13 @@ bit_loop:
 mid_zero:
     ; Add the extra duration for a zero bit to the middle section
     nop               [28] ; Zero high part 2
-    set pins, 0       [28] ; Zero low part 1
+    set pins, 0b00    [28] ; Zero low part 1
 
 short_low:
-    set pins, 0       [28] ; Low half-wave
+    set pins, 0b00    [28] ; Low half-wave
 
 new_bit:
-    set pins, 1       [25] ; High half-wave (starting new bit)
+    set pins, 0b11    [25] ; High half-wave (starting new bit)
     jmp x--, bit_loop      ; Loop back for the next bit
     mov y, isr        [2]  ; Restore the bytes remaining counter from the ISR
 
@@ -74,8 +74,8 @@ byte_reset:
     set x, 8               ; Set x to 8 for the next byte loop
     jmp y--, byte_loop     ; Loop back for the next byte
 
-    set pins, 0       [28] ; Second half of packet end bit
-    set pins, 1       [12] ; Start Railcom quarter-wave
+    set pins, 0b00    [28] ; Second half of packet end bit
+    set pins, 0b11    [12] ; Start Railcom quarter-wave
     irq set 0              ; Trigger the Railcom decoder
     wait 1 irq 1           ; Wait for the Railcom cutout to end
 

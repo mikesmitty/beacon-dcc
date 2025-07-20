@@ -88,8 +88,8 @@ func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
 	cfg.SetOutShift(false, true, 32)
 	// Combine the TX/RX FIFO buffers to allow extra breathing room between buffer writes
 	cfg.SetFIFOJoin(pio.FifoJoinTx)
-	// Set set pin to the signal pin
-	cfg.SetSetPins(signalPin, 1)
+	// Set set pin to the signal pins
+	cfg.SetSetPins(signalPin, 2)
 	// Enable sticky pins (set pins will remain set until cleared)
 	cfg.SetOutSpecial(true, false, machine.NoPin)
 
