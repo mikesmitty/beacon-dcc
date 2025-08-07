@@ -10,17 +10,36 @@ import (
 type PriorityQueue struct {
 	items []*packet.Packet
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
 var _ heap.Interface = (*PriorityQueue)(nil)
 
 func NewPriorityQueue(size int, eventClient *event.EventClient) PriorityQueue {
 	q := PriorityQueue{
-		items:       make([]*packet.Packet, 0, size),
-		EventClient: eventClient,
+		items: make([]*packet.Packet, 0, size),
+		Event: eventClient,
 	}
 	return q
+}
+
+func (pq *PriorityQueue) Update() {
+	select {
+	case evt := <-pq.Event.Receive:
+		switch p := evt.Data.(type) {
+		case *packet.Packet:
+			if p == nil {
+				return
+			}
+			if !pq.Contains(p) {
+				pq.PushPacket(p)
+			}
+		default:
+			pq.Event.Debug("Received unknown event type: %T", evt.Data)
+		}
+	default:
+		// No event to process
+	}
 }
 
 func (pq PriorityQueue) Len() int {
@@ -60,6 +79,10 @@ func (pq *PriorityQueue) Pop() any {
 }
 
 func (pq *PriorityQueue) PushPacket(packet *packet.Packet) {
+	if packet == nil {
+		pq.Event.Debug("Cannot push nil packet")
+		return
+	}
 	heap.Push(pq, packet)
 }
 
@@ -105,7 +128,7 @@ func (pq *PriorityQueue) Remove(packet *packet.Packet) {
 	}
 }
 
-func (pq *PriorityQueue) Update(packet *packet.Packet, newPriority packet.Priority) {
+func (pq *PriorityQueue) UpdatePriority(packet *packet.Packet, newPriority packet.Priority) {
 	for i, p := range pq.items {
 		if p == packet {
 			p.Priority = newPriority

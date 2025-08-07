@@ -12,11 +12,12 @@ type Event struct {
 
 type EventBus struct {
 	subscribers map[string]map[string]chan Event
-	mux         sync.Mutex
+	mux         *sync.Mutex
 }
 
 func NewEventBus() *EventBus {
 	return &EventBus{
+		mux:         &sync.Mutex{},
 		subscribers: make(map[string]map[string]chan Event),
 	}
 }

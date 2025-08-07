@@ -11,6 +11,7 @@ import (
 	"github.com/mikesmitty/beacon-dcc/pkg/dccex"
 	"github.com/mikesmitty/beacon-dcc/pkg/event"
 	"github.com/mikesmitty/beacon-dcc/pkg/motor"
+	"github.com/mikesmitty/beacon-dcc/pkg/packet"
 	"github.com/mikesmitty/beacon-dcc/pkg/queue"
 	"github.com/mikesmitty/beacon-dcc/pkg/serial"
 	"github.com/mikesmitty/beacon-dcc/pkg/shared"
@@ -36,40 +37,52 @@ func main() {
 	*/
 
 	bus := event.NewEventBus()
-	cl := bus.NewEventClient("main", "main", 1)
+	cl := bus.NewEventClient("main", "main")
 
-	dex := dccex.NewDCCEX(bus.NewEventClient("dccex", topic.BroadcastDex, 1)) // DCC-EX Command Parser
-	dex.Subscribe(topic.ReceiveCmdSerial)
+	dex := dccex.NewDCCEX(bus.NewEventClient("dccex", topic.BroadcastDex))
+	dex.Event.Subscribe(topic.ReceiveCmdSerial)
 
-	defaultSerial := serial.NewSerial(machine.Serial, bus.NewEventClient("serial", topic.ReceiveCmdSerial))
-	defaultSerial.Subscribe(topic.BroadcastDex, topic.BroadcastDebug)
-	// defaultSerial.Update()
+	serialOptions := map[string]serial.Serialer{
+		"serial": machine.Serial,
+		// FIXME: Handle initialization of USBCDC if necessary
+		// "usb":    machine.USBCDC,
+		// "uart":   machine.DefaultUART,
+	}
 
-	// FIXME: Handle initialization of USBCDC if necessary
-	// usbSerial := serial.NewSerial(bus, "usb", machine.USBCDC, topic.BroadcastDex, topic.BroadcastDebug)
-	// usbSerial.Update()
-	// defaultUART := c.RegisterSerial("uart", machine.DefaultUART, true)
-	// defaultUART.Update()
-	cl.Debug("Default serial initialized")
+	serials := make(map[string]*serial.Serial)
+	for id, s := range serialOptions {
+		serials[id] = serial.NewSerial(s, bus.NewEventClient(id, topic.ReceiveCmdSerial))
+		serials[id].Event.Subscribe(topic.BroadcastDex, topic.BroadcastDebug)
+	}
 
-	q := queue.NewPriorityQueue(32, bus.NewEventClient("priorityqueue", topic.WavegenSend, 3))
-	q.Subscribe(topic.WavegenQueue)
+	go func() {
+		for {
+			for _, s := range serials {
+				s.Update()
+			}
+			time.Sleep(10 * time.Microsecond)
+		}
+	}()
+	cl.Debug("-----------------------------------------------------")
 
-	w, err := InitWavegen(machine.GPIO22, machine.GPIO9, bus)
+	q := queue.NewPriorityQueue(32, bus.NewEventClient("priorityqueue", topic.WavegenSend))
+	q.Event.Subscribe(topic.WavegenQueue)
+
+	pool := packet.NewPacketPool(dcc.MaxPacketSize)
+
+	w, err := InitWavegen(machine.GPIO22, machine.GPIO9, pool.DiscardPacket, bus)
 	if err != nil {
 		panic(err)
 	}
-	cl.Debug("Wavegen initialized")
 
 	profiles := motor.ShieldEX8874
 	// profiles := motor.ArduinoMotorShieldRev3
 	motors := InitMotor(profiles, bus)
-	cl.Debug("Motor initialized")
 
 	tracks := make(map[string]*track.Track)
 	for id := range motors {
-		tracks[id] = track.NewTrack(id, track.TrackModeMain, bus.NewEventClient("track"+id, topic.MotorControl+id, 1))
-		tracks[id].Subscribe(topic.MotorControl + id)
+		tracks[id] = track.NewTrack(id, track.TrackModeMain, bus.NewEventClient("track"+id, topic.MotorControl+id))
+		tracks[id].Event.Subscribe(topic.MotorControl + id)
 	}
 
 	board := shared.BoardInfo{
@@ -78,18 +91,24 @@ func main() {
 		ShieldName: shieldName,
 		Version:    version,
 	}
-	d := dcc.NewDCC(board, w, bus.NewEventClient("dcc", topic.BroadcastDex, 1))
+	d := dcc.NewDCC(board, w, pool, bus.NewEventClient("dcc", topic.BroadcastDex))
 	cl.Debug("DCC initialized")
-
-	//
-	// FIXME: Start converting again from here
-	//
 
 	// FIXME: Add all the non-tight loops
 
-	go d.Run()
+	go func() {
+		for {
+			d.Update() // DCC main loop
+			q.Update() // PriorityQueue main loop
+			w.Update() // Wavegen main loop
+			time.Sleep(1 * time.Millisecond)
+		}
+	}()
 
 	for {
+		for _, t := range tracks {
+			t.Update()
+		}
 		for _, m := range motors {
 			m.Update()
 		}
@@ -98,23 +117,22 @@ func main() {
 	}
 }
 
-func InitWavegen(signalPin, brakePin machine.Pin, bus *event.EventBus) (*wavegen.Wavegen, error) {
+func InitWavegen(signalPin, brakePin machine.Pin, packetReturn func(*packet.Packet), bus *event.EventBus) (*wavegen.Wavegen, error) {
 	signalPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	brakePin.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
 	config := wavegen.WavegenConfig{
-		Mode:      wavegen.NormalMode,
-		SignalPin: signalPin,
-		BrakePin:  brakePin,
+		Mode:         wavegen.NormalMode,
+		SignalPin:    signalPin,
+		BrakePin:     brakePin,
+		PacketReturn: packetReturn,
 	}
 
-	w, err := wavegen.NewWavegen(config, bus.NewEventClient("wavegen", topic.WavegenQueue, 3))
+	w, err := wavegen.NewWavegen(config, bus.NewEventClient("wavegen", topic.WavegenQueue))
 	if err != nil {
 		return nil, err
 	}
-	w.Subscribe(topic.WavegenSend)
-
-	// Enable the wavegen
+	w.Event.Subscribe(topic.WavegenSend)
 	w.Enable(true)
 
 	return w, nil
@@ -129,16 +147,9 @@ func InitMotor(profiles map[string]motor.MotorShieldProfile, bus *event.EventBus
 	motors := make(map[string]*motor.Motor)
 	for id, profile := range profiles {
 		profile.ADC = adcs[id]
-		motors[id] = motor.NewMotor(id, profile, bus.NewEventClient(id, topic.MotorStatus+id, 1))
-		motors[id].Subscribe(topic.MotorControl + id)
+		motors[id] = motor.NewMotor(id, profile, bus.NewEventClient(id, topic.MotorStatus+id))
+		motors[id].Event.Subscribe(topic.MotorControl + id)
 	}
-
-	// EX-MotorDriver8874
-	// mA := motor.NewMotor("A", adc1, machine.GPIO3, machine.GPIO9, machine.GPIO45, false, 1.27, 5000, c)
-	// mB := motor.NewMotor("B", adc2, machine.GPIO11, machine.GPIO8, machine.GPIO46, false, 1.27, 5000, c)
-	// Arduino Motor Shield R3
-	// mA := motor.NewMotor("A", adc1, machine.GPIO3, machine.GPIO9, machine.NoPin, false, 0.488, 1500, c)
-	// mB := motor.NewMotor("B", adc2, machine.GPIO11, machine.GPIO8, machine.NoPin, false, 0.488, 1500, c)
 
 	return motors
 }

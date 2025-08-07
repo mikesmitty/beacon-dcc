@@ -10,7 +10,7 @@ type Serial struct {
 	buf  *bytes.Buffer
 	uart Serialer
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
 type Serialer interface {
@@ -25,7 +25,7 @@ func NewSerial(uart Serialer, cl *event.EventClient) *Serial {
 		buf:  new(bytes.Buffer),
 		uart: uart,
 
-		EventClient: cl,
+		Event: cl,
 	}
 
 	if s.uart == nil {
@@ -37,7 +37,7 @@ func NewSerial(uart Serialer, cl *event.EventClient) *Serial {
 
 func (s *Serial) Update() {
 	select {
-	case evt := <-s.Events:
+	case evt := <-s.Event.Receive:
 		msg, ok := evt.Data.(*bytes.Buffer)
 		if !ok {
 			break
@@ -89,7 +89,7 @@ func (s *Serial) ReadCommand() {
 		cmdBuf := new(bytes.Buffer)
 		command := data[1:end]
 		cmdBuf.Write(command)
-		s.Publish(cmdBuf)
+		s.Event.Publish(cmdBuf)
 
 		// Reset to break the loop and be ready to start again
 		s.buf.Reset()

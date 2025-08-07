@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/packet"
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
 )
 
 const (
@@ -17,7 +18,7 @@ const (
 // FIXME: Cleanup? - originally setFunctionInternal
 func (d *DCC) setFunction(loco uint16, count int, b ...byte) {
 	p := d.setFunctionPacket(loco, count, b...)
-	d.wavegen.SendPacket(p)
+	d.PublishTo(topic.WavegenQueue, p)
 }
 
 func (d *DCC) setFunctionPacket(loco uint16, count int, b ...byte) *packet.Packet {
@@ -67,7 +68,7 @@ func (d *DCC) setFn(loco uint16, functionNumber uint16, on bool) (bool, error) {
 		}
 		p.Priority = packet.NormalPriority
 		p.Repeats = 4
-		d.wavegen.SendPacket(p)
+		d.PublishTo(topic.WavegenQueue, p)
 	}
 
 	/* FIXME: Implement? Original comment:

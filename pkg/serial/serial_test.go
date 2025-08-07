@@ -41,7 +41,7 @@ func TestReadCommand_ValidCommand(t *testing.T) {
 	s.ReadCommand()
 
 	select {
-	case evt := <-cl.Events:
+	case evt := <-cl.Receive:
 		buf, ok := evt.Data.(*bytes.Buffer)
 		if !ok {
 			t.Fatal("event data is not *bytes.Buffer")
@@ -68,7 +68,7 @@ func TestReadCommand_JunkBeforeStart(t *testing.T) {
 	s.ReadCommand()
 
 	select {
-	case evt := <-cl.Events:
+	case evt := <-cl.Receive:
 		buf, ok := evt.Data.(*bytes.Buffer)
 		if !ok {
 			t.Fatal("event data is not *bytes.Buffer")
@@ -95,7 +95,7 @@ func TestReadCommand_IncompleteCommand(t *testing.T) {
 	s.ReadCommand()
 
 	select {
-	case <-cl.Events:
+	case <-cl.Receive:
 		t.Fatal("should not receive event for incomplete command")
 	default:
 		// success
@@ -109,7 +109,7 @@ func TestRun_ClientsDex(t *testing.T) {
 		writeBuf: new(bytes.Buffer),
 	}
 	s := NewSerial(mockSerial, eb.NewEventClient("test", topic.ReceiveCmdSerial))
-	s.Subscribe(topic.BroadcastDex)
+	s.Event.Subscribe(topic.BroadcastDex)
 
 	msg := bytes.NewBufferString("hello")
 	eb.Publish(topic.BroadcastDex, "test", msg)

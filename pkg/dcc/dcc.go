@@ -1,13 +1,14 @@
 package dcc
 
 import (
-	"runtime"
+	"bytes"
+	"fmt"
 	"sync"
-	"time"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/event"
 	"github.com/mikesmitty/beacon-dcc/pkg/packet"
 	"github.com/mikesmitty/beacon-dcc/pkg/shared"
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
 	"github.com/mikesmitty/beacon-dcc/pkg/wavegen"
 )
 
@@ -62,37 +63,37 @@ type DCC struct {
 
 	loopState  LoopState
 	state      map[uint16]LocoState
-	stateMutex sync.RWMutex // TODO: Evaluate sync.Map for high concurrency
+	stateMutex *sync.RWMutex // TODO: Evaluate sync.Map for high concurrency
 	wavegen    *wavegen.Wavegen
+	pool       *packet.PacketPool
 
 	*event.EventClient
 }
 
-func NewDCC(boardInfo shared.BoardInfo, wavegen *wavegen.Wavegen, cl *event.EventClient) *DCC {
+func NewDCC(boardInfo shared.BoardInfo, wavegen *wavegen.Wavegen, pool *packet.PacketPool, cl *event.EventClient) *DCC {
 	d := &DCC{
 		BoardInfo:   boardInfo,
 		EventClient: cl,
 
-		wavegen: wavegen, // TODO: Make this an interface
+		pool:       pool,
+		stateMutex: &sync.RWMutex{},
+		wavegen:    wavegen, // TODO: Make this an interface
 	}
+
+	d.Diag("DCC-EX V-%s / %s / %s G-%s", d.Version, d.Board, d.ShieldName, d.GitSHA) // FIXME: Change hardcoded name?
 
 	return d
 }
 
-func (d *DCC) Run() {
-	d.Diag("DCC-EX V-%s / %s / %s G-%s", d.Version, d.Board, d.ShieldName, d.GitSHA) // FIXME: Change hardcoded name?
-
-	for {
-		// Issue reminders for all locos, one type at a time, starting with throttle reminders, then functions by group
-		// The messages are low priority and queued idempotently so there's no lower bound on the loop time, but we
-		// don't want to spend more time than necessary checking the queue for duplicate packets.
-		d.issueReminders()
-		time.Sleep(5 * time.Millisecond)
-	}
+func (d *DCC) Update() {
+	// Issue reminders for all locos, one type at a time, starting with throttle reminders, then functions by group
+	// The messages are low priority and queued idempotently so there's no lower bound on the loop time, but we
+	// don't want to spend more time than necessary checking the queue for duplicate packets.
+	d.issueReminders()
 }
 
 func (d *DCC) NewPacket(loco uint16) *packet.Packet {
-	p := d.wavegen.NewPacket()
+	p := d.pool.NewPacket()
 	if p == nil {
 		d.Debug("Failed to create new packet for loco %d", loco)
 		return nil
@@ -113,7 +114,6 @@ func (d *DCC) MotorShieldName() string {
 func (d *DCC) issueReminders() {
 	for loco := range d.state {
 		d.sendReminderPackets(loco)
-		runtime.Gosched() // Yield to allow other goroutines to run
 	}
 	d.loopState++
 	if d.loopState >= LoopStateRestart {
@@ -167,7 +167,12 @@ func (d *DCC) sendReminderPackets(loco uint16) {
 
 	p.Priority = packet.LowPriority
 	p.Repeats = 0
-	d.wavegen.SendPacketIdempotent(p)
+	d.PublishTo(topic.WavegenQueue, p)
+}
+
+func (d *DCC) Broadcast(input string, args ...any) {
+	buf := bytes.NewBuffer(fmt.Appendf(nil, input, args...))
+	d.Publish(buf)
 }
 
 func speedStep28(speed128 uint8) uint8 {

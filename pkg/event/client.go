@@ -9,13 +9,13 @@ import (
 )
 
 const (
-	defaultBufferSize = 1
+	defaultBufferSize = 3
 )
 
 type EventClient struct {
 	ClientID   string
 	Bus        Bus
-	Events     chan Event
+	Receive    chan Event
 	DefaultPub string
 	Topics     []string
 }
@@ -27,7 +27,7 @@ func (eb *EventBus) NewEventClient(clientID string, defaultPub string, bufSize .
 	return &EventClient{
 		ClientID:   clientID,
 		Bus:        eb,
-		Events:     make(chan Event, bufSize[0]),
+		Receive:    make(chan Event, bufSize[0]),
 		DefaultPub: defaultPub,
 	}
 }
@@ -35,7 +35,7 @@ func (eb *EventBus) NewEventClient(clientID string, defaultPub string, bufSize .
 func (cl *EventClient) Subscribe(topics ...string) {
 	for _, topic := range topics {
 		cl.Topics = append(cl.Topics, topic)
-		cl.Bus.Subscribe(topic, cl.ClientID, cl.Events)
+		cl.Bus.Subscribe(topic, cl.ClientID, cl.Receive)
 	}
 }
 

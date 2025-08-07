@@ -2,6 +2,7 @@ package dcc
 
 import (
 	"github.com/mikesmitty/beacon-dcc/pkg/packet"
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
 )
 
 func (d *DCC) SetThrottle(loco uint16, speed uint8, direction bool) {
@@ -21,7 +22,7 @@ func (d *DCC) SetThrottle(loco uint16, speed uint8, direction bool) {
 
 func (d *DCC) setThrottle(loco uint16, speedStep uint8) {
 	p := d.setThrottlePacket(loco, speedStep)
-	d.wavegen.SendPacket(p)
+	d.PublishTo(topic.WavegenQueue, p)
 }
 
 func (d *DCC) setThrottlePacket(loco uint16, speedStep uint8) *packet.Packet {

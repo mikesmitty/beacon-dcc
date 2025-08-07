@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/packet"
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
 )
 
 type AccOnOff byte
@@ -25,8 +26,8 @@ func (d *DCC) setAccessory(address uint16, port byte, direction bool, onOff AccO
 		return
 	}
 
-	pOn := d.wavegen.NewPacket()
-	pOff := d.wavegen.NewPacket()
+	pOn := d.pool.NewPacket()
+	pOff := d.pool.NewPacket()
 	if pOn == nil || pOff == nil {
 		d.Debug("Failed to create new packet for accessory command")
 		return
@@ -58,22 +59,22 @@ func (d *DCC) setAccessory(address uint16, port byte, direction bool, onOff AccO
 
 	// AccOn || AccBoth
 	if onOff != AccOff {
-		d.wavegen.SendPacket(pOn)
+		d.PublishTo(topic.WavegenQueue, pOn)
 		// FIXME: Cleanup
 		// #if defined(EXRAIL_ACTIVE)
 		//     RMFT2::activateEvent(address<<2|port, direction);
 		// #endif
 	} else {
 		// Discard the unused packet to return it to the pool
-		d.wavegen.DiscardPacket(pOn)
+		d.pool.DiscardPacket(pOn)
 	}
 
 	// AccOff || AccBoth
 	if onOff != AccOn {
-		d.wavegen.SendPacket(pOff)
+		d.PublishTo(topic.WavegenQueue, pOff)
 	} else {
 		// Discard the unused packet to return it to the pool
-		d.wavegen.DiscardPacket(pOff)
+		d.pool.DiscardPacket(pOff)
 	}
 }
 
@@ -82,7 +83,7 @@ func (d *DCC) setExtendedAccessory(address uint16, value byte, repeats int) erro
 		return fmt.Errorf("invalid address or value: address=%d, value=%d", address, value)
 	}
 
-	p := d.wavegen.NewPacket()
+	p := d.pool.NewPacket()
 	if p == nil {
 		return fmt.Errorf("failed to create new packet for extended accessory command")
 	}
@@ -107,6 +108,6 @@ func (d *DCC) setExtendedAccessory(address uint16, value byte, repeats int) erro
 
 	p.Priority = packet.NormalPriority
 	p.Repeats = repeats
-	d.wavegen.SendPacket(p)
+	d.PublishTo(topic.WavegenQueue, p)
 	return nil
 }

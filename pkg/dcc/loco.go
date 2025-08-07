@@ -1,9 +1,8 @@
 package dcc
 
 import (
+	"bytes"
 	"fmt"
-
-	"github.com/mikesmitty/beacon-dcc/pkg/comm"
 )
 
 type LocoState struct {
@@ -114,7 +113,7 @@ func (d *DCC) broadcastLocoState(loco uint16) {
 	}
 	// FIXME: Revisit state.SpeedStep here for 28 speed-steps
 	// This byte is just the raw 128 speed step value
-	d.comm.Broadcast(comm.SerialClient, "<l %d 0 %d %d>", loco, state.SpeedStep, state.Functions)
+	d.Broadcast("<l %d 0 %d %d>", loco, state.SpeedStep, state.Functions)
 
 	// FIXME: Implement?
 	// WiThrottle::markForBroadcast(sp->loco);
@@ -122,15 +121,17 @@ func (d *DCC) broadcastLocoState(loco uint16) {
 
 // FIXME: Cleanup - originally DCC::displayCabList
 func (d *DCC) dumpLocoState() {
-	msg := comm.NewSimpleMessage(true, []byte("<*\n"))
+	// FIXME: Revisit this
+	buf := new(bytes.Buffer)
+	buf.Write([]byte("<*\n"))
 
 	d.stateMutex.RLock()
 	for id, state := range d.state {
-		fmt.Fprintf(msg, "cab=%d, speed=%d, functions=0x%X\n", id, state.SpeedStep, state.Functions)
+		fmt.Fprintf(buf, "cab=%d, speed=%d, functions=0x%X\n", id, state.SpeedStep, state.Functions)
 	}
 	d.stateMutex.RUnlock()
 
-	fmt.Fprintf(msg, "Total=%d *>\n", len(d.state))
+	fmt.Fprintf(buf, "Total=%d *>\n", len(d.state))
 
-	d.comm.BroadcastMessage(comm.SerialClient, msg)
+	d.Publish(buf)
 }

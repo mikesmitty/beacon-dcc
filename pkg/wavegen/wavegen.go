@@ -37,13 +37,13 @@ type Wavegen struct {
 
 	WavegenConfig
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
 func NewWavegen(config WavegenConfig, cl *event.EventClient) (*Wavegen, error) {
 	w := &Wavegen{
 		WavegenConfig: config,
-		EventClient:   cl,
+		Event:         cl,
 	}
 
 	err := w.initPIO(config.Mode, config.SignalPin, config.SignalPinCount, config.BrakePin)
@@ -69,7 +69,7 @@ func (w *Wavegen) IdlePacket() *packet.Packet {
 	return p
 }
 
-func (w *Wavegen) Update(count int) {
+func (w *Wavegen) Update() {
 	// The input format is an 8 bit number containing the number of bytes in the message,
 	// followed by the data bytes. For example, the standard idle packet is 0x3FF00FF
 	// 3 for the length, followed by 11111111 00000000 11111111
@@ -78,22 +78,23 @@ func (w *Wavegen) Update(count int) {
 
 	var p *packet.Packet
 	var ok bool
-	for range count {
-		select {
-		case evt := <-w.Events:
-			p, ok = evt.Data.(*packet.Packet)
-			if !ok {
-				continue
-			}
-
-			w.send(p)
-			if w.PacketReturn != nil {
-				// Return the packet to the pool for reuse
-				w.PacketReturn(p)
-			}
-		default:
-			// No queued packets to process, let the PIO send idle packets
+	// for range count { // FIXME: Cleanup
+	select {
+	case evt := <-w.Event.Receive:
+		p, ok = evt.Data.(*packet.Packet)
+		if !ok {
+			// continue
 			return
 		}
+
+		w.send(p)
+		if w.PacketReturn != nil {
+			// Return the packet to the pool for reuse
+			w.PacketReturn(p)
+		}
+	default:
+		// No queued packets to process, let the PIO send idle packets
+		return
 	}
+	// }
 }

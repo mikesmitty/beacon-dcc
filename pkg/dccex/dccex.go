@@ -85,12 +85,12 @@ type HandlerFunc func(resp *bytes.Buffer, cmd byte, params [][]byte) error
 type DCCEX struct {
 	handlers map[byte]HandlerFunc
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
 func NewDCCEX(cl *event.EventClient) *DCCEX {
 	d := &DCCEX{
-		EventClient: cl,
+		Event: cl,
 
 		handlers: make(map[byte]HandlerFunc),
 	}
@@ -104,7 +104,7 @@ func NewDCCEX(cl *event.EventClient) *DCCEX {
 
 func (d *DCCEX) Update() {
 	select {
-	case evt := <-d.Events:
+	case evt := <-d.Event.Receive:
 		msg, ok := evt.Data.(*bytes.Buffer)
 		if !ok {
 			return
@@ -124,7 +124,7 @@ func (d *DCCEX) Update() {
 			response.WriteString("<X>")
 			// FIXME: Log error
 		}
-		d.Publish(response)
+		d.Event.Publish(response)
 	default:
 		// No event to process
 	}

@@ -54,7 +54,7 @@ type Motor struct {
 	prevState          PowerMode
 	state              PowerMode
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
 // NewMotor initializes a new Motor instance with the given ADC pins and current sense factor.
@@ -62,7 +62,7 @@ type Motor struct {
 func NewMotor(trackId string, profile MotorShieldProfile, cl *event.EventClient) *Motor {
 	m := &Motor{
 		MotorShieldProfile: profile,
-		EventClient:        cl,
+		Event:              cl,
 		trackId:            trackId,
 
 		currentLimit:     uint16(float32(profile.MaxCurrent) / profile.SenseFactor),
@@ -83,12 +83,12 @@ func NewMotor(trackId string, profile MotorShieldProfile, cl *event.EventClient)
 // Check for shorts or ack responses on programming tracks
 func (m *Motor) Update() {
 	select {
-	case evt := <-m.Events:
+	case evt := <-m.Event.Receive:
 		switch msg := evt.Data.(type) {
 		case string:
 			m.handleStringEvent(msg)
 		default:
-			m.Debug("Received unknown event type: %T", evt.Data)
+			m.Event.Debug("Received unknown event type: %T", evt.Data)
 		}
 	default:
 		// No event to process
@@ -112,7 +112,7 @@ func (m *Motor) Update() {
 	}
 
 	if m.prevState != m.state {
-		m.Publish(m.state.String())
+		m.Event.Publish(m.state.String())
 	}
 	m.prevState = m.state
 }
@@ -125,7 +125,7 @@ func (m *Motor) handleStringEvent(msg string) {
 	case "off":
 		newState = PowerModeOff
 	default:
-		m.Debug("Invalid motor state: %s", msg)
+		m.Event.Debug("Invalid motor state: %s", msg)
 		return
 	}
 
@@ -146,11 +146,11 @@ func (m *Motor) handleOnState() {
 	}
 
 	if overcurrent && fault {
-		m.Diag("TRACK %s ALERT FAULT %dmA", m.trackId, mA)
+		m.Event.Diag("TRACK %s ALERT FAULT %dmA", m.trackId, mA)
 	} else if overcurrent {
-		m.Debug("TRACK %s ALERT %dmA", m.trackId, mA)
+		m.Event.Debug("TRACK %s ALERT %dmA", m.trackId, mA)
 	} else {
-		m.Debug("TRACK %s FAULT", m.trackId)
+		m.Event.Debug("TRACK %s FAULT", m.trackId)
 	}
 
 	m.setPowerMode(PowerModeAlert)
@@ -182,10 +182,10 @@ func (m *Motor) handleAlertState(firstTime bool) {
 		}
 
 		if firstTime {
-			m.Diag("TRACK %s FAULT PIN (%s ignore)", m.trackId, timeout)
+			m.Event.Diag("TRACK %s FAULT PIN (%s ignore)", m.trackId, timeout)
 			return
 		}
-		m.Diag("TRACK %s FAULT PIN detected after %s. Pause %s", m.trackId, timeSinceAlert, overcurrentTimeout)
+		m.Event.Diag("TRACK %s FAULT PIN detected after %s. Pause %s", m.trackId, timeSinceAlert, overcurrentTimeout)
 		m.limitInrush(false)
 		m.setPowerMode(PowerModeOverload)
 		return
@@ -199,10 +199,10 @@ func (m *Motor) handleAlertState(firstTime bool) {
 		}
 
 		if firstTime {
-			m.Diag("TRACK %s CURRENT (%s ignore) %dmA", m.trackId, overcurrentTimeout, mA)
+			m.Event.Diag("TRACK %s CURRENT (%s ignore) %dmA", m.trackId, overcurrentTimeout, mA)
 			return
 		}
-		m.Diag("TRACK %s POWER OVERLOAD %dmA (max %dmA) detected after %s. Pause %s", m.trackId, mA, m.MaxCurrent, timeSinceAlert, overcurrentTimeout)
+		m.Event.Diag("TRACK %s POWER OVERLOAD %dmA (max %dmA) detected after %s. Pause %s", m.trackId, mA, m.MaxCurrent, timeSinceAlert, overcurrentTimeout)
 		m.limitInrush(false)
 		m.setPowerMode(PowerModeOverload)
 		return
@@ -210,7 +210,7 @@ func (m *Motor) handleAlertState(firstTime bool) {
 
 	// If we reach here, there are no faults or overcurrent conditions
 	if timeSinceAlert > alertWindow {
-		m.Diag("TRACK %s NORMAL (after %s/%s) %dmA", m.trackId, timeSinceAlert, alertWindow, mA)
+		m.Event.Diag("TRACK %s NORMAL (after %s/%s) %dmA", m.trackId, timeSinceAlert, alertWindow, mA)
 		m.limitInrush(false)
 		m.setPowerMode(PowerModeOn)
 	} else if timeSinceAlert > alertWindow/2 {
@@ -237,7 +237,7 @@ func (m *Motor) handleOverloadState() {
 	#endif
 	*/
 
-	m.Diag("TRACK %s POWER RESTORE (after %s)", m.trackId, timeSinceOverload)
+	m.Event.Diag("TRACK %s POWER RESTORE (after %s)", m.trackId, timeSinceOverload)
 	m.setPowerMode(PowerModeAlert)
 }
 
@@ -254,7 +254,7 @@ func (m *Motor) checkOverCurrent() (bool, uint16) {
 
 	mA := uint16(float32(m.lastReading) * m.SenseFactor)
 	if m.lastReading > m.currentLimit || (m.progMode && m.lastReading > m.progCurrentLimit) {
-		m.Debug("TRACK ALERT %dmA", mA)
+		m.Event.Debug("TRACK ALERT %dmA", mA)
 		// FIXME: Cleanup
 		// DIAG(F("TRACK %c ALERT %s %dmA"), trackno + 'A', cF ? "FAULT" : "", mA);
 		return true, mA
@@ -266,7 +266,7 @@ func (m *Motor) setPowerMode(mode PowerMode) {
 	if m.state == mode {
 		return
 	}
-	m.Debug("Motor %s setPowerMode %s", m.trackId, mode)
+	m.Event.Debug("Motor %s setPowerMode %s", m.trackId, mode)
 
 	m.lastStateTime[mode] = time.Now()
 
@@ -276,7 +276,7 @@ func (m *Motor) setPowerMode(mode PowerMode) {
 		// middle of the range and go up/down based on direction)
 		if m.state == PowerModeOff && m.ADC != nil {
 			m.zeroReading = m.ADC.Get()
-			m.Diag("Motor %s zeroReading=%d", m.trackId, m.zeroReading)
+			m.Event.Diag("Motor %s zeroReading=%d", m.trackId, m.zeroReading)
 		}
 
 		m.PowerPin.Set(!m.InvertPower) // High
@@ -306,7 +306,7 @@ func (m *Motor) limitInrush(on bool) {
 		if m.brakePWM == nil {
 			brakePwm, err := pwm.NewPWM(m.BrakePin, pwm.MaxFreq, 80.0)
 			if err != nil {
-				m.Diag("Failed to initialize PWM for brake pin: %v", err)
+				m.Event.Diag("Failed to initialize PWM for brake pin: %v", err)
 				return
 			}
 			m.brakePWM = brakePwm

@@ -53,16 +53,16 @@ func TestNewEventClient_DefaultBufferSize(t *testing.T) {
 	if client.DefaultPub != "topic1" {
 		t.Errorf("expected DefaultPub 'topic1', got %s", client.DefaultPub)
 	}
-	if cap(client.Events) != defaultBufferSize {
-		t.Errorf("expected buffer size %d, got %d", defaultBufferSize, cap(client.Events))
+	if cap(client.Receive) != defaultBufferSize {
+		t.Errorf("expected buffer size %d, got %d", defaultBufferSize, cap(client.Receive))
 	}
 }
 
 func TestNewEventClient_CustomBufferSize(t *testing.T) {
 	eb := &EventBus{}
 	client := eb.NewEventClient("id2", "topic2", 5)
-	if cap(client.Events) != 5 {
-		t.Errorf("expected buffer size 5, got %d", cap(client.Events))
+	if cap(client.Receive) != 5 {
+		t.Errorf("expected buffer size 5, got %d", cap(client.Receive))
 	}
 }
 
@@ -71,7 +71,7 @@ func TestEventClient_SubscribeAndUnsubscribe(t *testing.T) {
 	client := &EventClient{
 		ClientID:   "cid",
 		Bus:        bus,
-		Events:     make(chan Event, 2),
+		Receive:    make(chan Event, 2),
 		DefaultPub: "def",
 	}
 	client.Subscribe("t1", "t2")
@@ -96,7 +96,7 @@ func TestEventClient_UnsubscribeFromAll(t *testing.T) {
 	client := &EventClient{
 		ClientID:   "cid",
 		Bus:        bus,
-		Events:     make(chan Event, 2),
+		Receive:    make(chan Event, 2),
 		DefaultPub: "def",
 		Topics:     []string{"t1", "t2"},
 	}
@@ -114,7 +114,7 @@ func TestEventClient_Publish(t *testing.T) {
 	client := &EventClient{
 		ClientID:   "cid",
 		Bus:        bus,
-		Events:     make(chan Event, 2),
+		Receive:    make(chan Event, 2),
 		DefaultPub: "def",
 	}
 	client.Publish("data1")
@@ -131,7 +131,7 @@ func TestEventClient_PublishTo(t *testing.T) {
 	client := &EventClient{
 		ClientID:   "cid",
 		Bus:        bus,
-		Events:     make(chan Event, 2),
+		Receive:    make(chan Event, 2),
 		DefaultPub: "def",
 	}
 	client.PublishTo("topicX", "dataX")
@@ -149,7 +149,7 @@ func TestEventClient_ConcurrentPublishSubscribe(t *testing.T) {
 	client := &EventClient{
 		ClientID:   "cid",
 		Bus:        bus,
-		Events:     make(chan Event, 10),
+		Receive:    make(chan Event, 10),
 		DefaultPub: "def",
 	}
 	done := make(chan struct{})
