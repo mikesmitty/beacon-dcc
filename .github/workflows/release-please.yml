@@ -1,0 +1,56 @@
+on:
+  push:
+    branches:
+      - main
+
+name: Release Please
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release-please
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+    outputs:
+      release-created: ${{ steps.release-please.outputs.release_created }}
+      tag-name: ${{ steps.release-please.outputs.tag_name }}
+      version: ${{ steps.release-please.outputs.version }}
+
+  build-firmware:
+    if: ${{ needs.release-please.outputs.release-created == 'true' }}
+    needs: release-please
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install dependencies
+        run: go get .
+
+      - name: Run Tests
+        run: go test -v ./...
+
+      - name: Install TinyGo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --pattern '*amd64.deb' --repo tinygo-org/tinygo
+          sudo dpkg -i tinygo_*.deb
+
+      - name: Build
+        run: tinygo build -o rp24-dcc-decoder_${VERSION}.uf2 -target pico2 -ldflags="-X 'main.version=${VERSION}'"
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+
+      - name: Upload Artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload ${{ needs.release-please.outputs.tag-name }} *.uf2

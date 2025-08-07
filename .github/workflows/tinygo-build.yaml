@@ -1,0 +1,44 @@
+on:
+  push:
+
+name: Build
+
+jobs:
+  tinygo-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install dependencies
+        run: go get .
+
+      - name: Run Tests
+        run: |
+          GOCACHE=$(mktemp -d)
+          go env -w GOCACHE=$GOCACHE
+          go test -v ./...
+          go env -u GOCACHE
+
+      - name: Install TinyGo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --pattern '*amd64.deb' --repo tinygo-org/tinygo
+          sudo dpkg -i tinygo_*.deb
+
+      - name: Build
+        id: build
+        run: |
+          tinygo build -o beacon-dcc.uf2 -target pico-plus2
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beacon-dcc-${{ steps.build.outputs.short_sha }}.uf2
+          path: beacon-dcc.uf2
