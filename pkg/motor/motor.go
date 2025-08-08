@@ -311,7 +311,7 @@ func (m *Motor) limitInrush(on bool) {
 			}
 			m.brakePWM = brakePwm
 		}
-	} else {
+	} else if m.brakePWM != nil {
 		m.brakePWM.SetDuty(0.0)
 		m.brakePWM = nil
 	}

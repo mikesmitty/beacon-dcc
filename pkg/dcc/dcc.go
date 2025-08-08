@@ -165,9 +165,11 @@ func (d *DCC) sendReminderPackets(loco uint16) {
 		d.loopState = LoopStateSpeed
 	}
 
-	p.Priority = packet.LowPriority
-	p.Repeats = 0
-	d.PublishTo(topic.WavegenQueue, p)
+	if p != nil {
+		p.Priority = packet.LowPriority
+		p.Repeats = 0
+		d.PublishTo(topic.WavegenQueue, p)
+	}
 }
 
 func (d *DCC) Broadcast(input string, args ...any) {
