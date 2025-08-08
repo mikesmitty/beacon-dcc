@@ -48,10 +48,6 @@ type StateMachine interface {
 	TxPut(uint32)
 }
 
-type CVCallbackFunc func(uint16, uint8) bool
-
-type OutputCallback func(uint16, bool)
-
 type MockPin uint8
 
 func (m MockPin) Configure(mode machine.PinConfig) {}
@@ -68,4 +64,16 @@ func (m MockPin) Set(bool) {}
 
 func (m MockPin) SetInterrupt(machine.PinChange, func(machine.Pin)) error {
 	return nil
+}
+
+type Logger interface {
+	Diag(format string, args ...any)
+	Debug(format string, args ...any)
+}
+
+type BoardInfo struct {
+	Board      string
+	GitSHA     string
+	ShieldName string
+	Version    string
 }

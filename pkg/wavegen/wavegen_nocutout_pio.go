@@ -5,12 +5,12 @@ package wavegen
 import (
 	pio "github.com/tinygo-org/pio/rp2-pio"
 )
-// wavegen
+// wavegenNoCutout
 
-const wavegenWrapTarget = 0
-const wavegenWrap = 29
+const wavegenNoCutoutWrapTarget = 0
+const wavegenNoCutoutWrap = 26
 
-var wavegenInstructions = []uint16{
+var wavegenNoCutoutInstructions = []uint16{
 		//     .wrap_target
 		0xe04f, //  0: set    y, 15                      
 		0xfc03, //  1: set    pins, 3                [28]
@@ -38,16 +38,13 @@ var wavegenInstructions = []uint16{
 		0xa246, // 23: mov    y, isr                 [2] 
 		0xe028, // 24: set    x, 8                       
 		0x008e, // 25: jmp    y--, 14                    
-		0xfc00, // 26: set    pins, 0                [28]
-		0xec03, // 27: set    pins, 3                [12]
-		0xc000, // 28: irq    nowait 0                   
-		0x20c1, // 29: wait   1 irq, 1                   
+		0xfb00, // 26: set    pins, 0                [27]
 		//     .wrap
 }
-const wavegenOrigin = -1
-func wavegenProgramDefaultConfig(offset uint8) pio.StateMachineConfig {
+const wavegenNoCutoutOrigin = -1
+func wavegenNoCutoutProgramDefaultConfig(offset uint8) pio.StateMachineConfig {
 	cfg := pio.DefaultStateMachineConfig()
-	cfg.SetWrap(offset+wavegenWrapTarget, offset+wavegenWrap)
+	cfg.SetWrap(offset+wavegenNoCutoutWrapTarget, offset+wavegenNoCutoutWrap)
 	return cfg;
 }
 

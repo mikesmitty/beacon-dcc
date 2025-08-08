@@ -75,3 +75,15 @@ type MockPinConfig struct {
 }
 
 type MockPinMode uint8
+
+type Logger interface {
+	Diag(format string, args ...any)
+	Debug(format string, args ...any)
+}
+
+type BoardInfo struct {
+	Board      string
+	GitSHA     string
+	ShieldName string
+	Version    string
+}
