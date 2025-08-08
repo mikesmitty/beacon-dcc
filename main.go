@@ -65,8 +65,8 @@ func main() {
 	}()
 	cl.Debug("-----------------------------------------------------")
 
-	q := queue.NewPriorityQueue(32, bus.NewEventClient("priorityqueue", topic.WavegenSend))
-	q.Event.Subscribe(topic.WavegenQueue)
+	pq := queue.NewPriorityQueue(32, bus.NewEventClient("priorityqueue", topic.WavegenSend))
+	pq.Event.Subscribe(topic.WavegenQueue)
 
 	pool := packet.NewPacketPool(dcc.MaxPacketSize)
 
@@ -94,18 +94,19 @@ func main() {
 	d := dcc.NewDCC(board, w, pool, bus.NewEventClient("dcc", topic.BroadcastDex))
 	cl.Debug("DCC initialized")
 
-	// FIXME: Add all the non-tight loops
+	// The wavegen and priority queue loops stall frequently so they get their own goroutines
+	go w.Loop()
+	go pq.Loop()
 
 	go func() {
 		for {
 			d.Update() // DCC main loop
-			q.Update() // PriorityQueue main loop
-			w.Update() // Wavegen main loop
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
 		}
 	}()
 
 	for {
+		// Handle track status events and power monitoring (short-circuit detection)
 		for _, t := range tracks {
 			t.Update()
 		}
@@ -113,7 +114,7 @@ func main() {
 			m.Update()
 		}
 		// runtime.Gosched()
-		time.Sleep(100 * time.Microsecond) // FIXME: Cleanup - this should be a tight loop eventually
+		time.Sleep(50 * time.Microsecond) // FIXME: Cleanup - this should be a tight loop eventually
 	}
 }
 

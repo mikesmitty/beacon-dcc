@@ -180,9 +180,13 @@ func (w *Wavegen) send(packet *packet.Packet) {
 		return
 	}
 	for _, m := range packet.Encode() {
-		if !w.waveSM.IsTxFIFOFull() {
-			w.waveSM.TxPut(m)
+		for w.waveSM.IsTxFIFOFull() {
+			time.Sleep(1 * time.Millisecond)
 		}
+		w.waveSM.TxPut(m)
+		// Sleep between messages to yield to other goroutines while the messages are being sent.
+		// The shortest possible DCC message takes >4 milliseconds to send, and we likely have a
+		// full FIFO at all times so this is a good time to yield.
 		time.Sleep(1 * time.Millisecond)
 	}
 }

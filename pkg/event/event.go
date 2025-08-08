@@ -24,18 +24,18 @@ func NewEventBus() *EventBus {
 
 func (eb *EventBus) Subscribe(topic string, clientId string, ch chan Event) {
 	eb.mux.Lock()
-	defer eb.mux.Unlock()
 
 	// Add the channel to the list of subscribers for this topic.
 	if eb.subscribers[topic] == nil {
 		eb.subscribers[topic] = make(map[string]chan Event)
 	}
 	eb.subscribers[topic][clientId] = ch
+
+	eb.mux.Unlock()
 }
 
 func (eb *EventBus) Unsubscribe(topic string, clientId string) {
 	eb.mux.Lock()
-	defer eb.mux.Unlock()
 
 	if subs, ok := eb.subscribers[topic]; ok {
 		delete(subs, clientId)
@@ -44,11 +44,12 @@ func (eb *EventBus) Unsubscribe(topic string, clientId string) {
 			delete(eb.subscribers, topic)
 		}
 	}
+
+	eb.mux.Unlock()
 }
 
 func (eb *EventBus) Publish(topic, clientId string, data any) {
 	eb.mux.Lock()
-	defer eb.mux.Unlock()
 
 	if subscribers, ok := eb.subscribers[topic]; ok {
 		event := Event{Topic: topic, ClientID: clientId, Data: data}
@@ -62,14 +63,13 @@ func (eb *EventBus) Publish(topic, clientId string, data any) {
 			}
 		}
 	}
+
+	eb.mux.Unlock()
 }
 
 func (eb *EventBus) SubscriberCount(topic string) int {
 	eb.mux.Lock()
-	defer eb.mux.Unlock()
-
-	if subs, ok := eb.subscribers[topic]; ok {
-		return len(subs)
-	}
-	return 0
+	subs := len(eb.subscribers[topic])
+	eb.mux.Unlock()
+	return subs
 }

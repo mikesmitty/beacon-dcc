@@ -69,32 +69,27 @@ func (w *Wavegen) IdlePacket() *packet.Packet {
 	return p
 }
 
-func (w *Wavegen) Update() {
+func (w *Wavegen) Loop() {
 	// The input format is an 8 bit number containing the number of bytes in the message,
 	// followed by the data bytes. For example, the standard idle packet is 0x3FF00FF
 	// 3 for the length, followed by 11111111 00000000 11111111
 	// The message start bit, byte terminating bits, and the packet end bit are added automatically.
 	// If the FIFO is empty the statemachine will send idle packets until stopped.
-
-	var p *packet.Packet
-	var ok bool
-	// for range count { // FIXME: Cleanup
-	select {
-	case evt := <-w.Event.Receive:
-		p, ok = evt.Data.(*packet.Packet)
-		if !ok {
-			// continue
-			return
+	for {
+		// FIXME: Does this need to be a durable queue?
+		evt := <-w.Event.Receive
+		switch p := evt.Data.(type) {
+		case *packet.Packet:
+			// Packet event, send the packet
+			w.send(p)
+			if w.PacketReturn != nil {
+				// Return the packet to the pool for reuse
+				w.PacketReturn(p)
+			}
+		default:
+			// Unknown event type, log it
+			w.Event.Diag("Unknown event type: %T", p)
+			continue
 		}
-
-		w.send(p)
-		if w.PacketReturn != nil {
-			// Return the packet to the pool for reuse
-			w.PacketReturn(p)
-		}
-	default:
-		// No queued packets to process, let the PIO send idle packets
-		return
 	}
-	// }
 }
