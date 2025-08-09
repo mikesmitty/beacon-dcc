@@ -63,7 +63,7 @@ type DCC struct {
 
 	loopState  LoopState
 	state      map[uint16]LocoState
-	stateMutex *sync.RWMutex // TODO: Evaluate sync.Map for high concurrency
+	stateMutex *sync.Mutex // TODO: Evaluate sync.Map for high concurrency
 	wavegen    *wavegen.Wavegen
 	pool       *packet.PacketPool
 
@@ -76,7 +76,7 @@ func NewDCC(boardInfo shared.BoardInfo, wavegen *wavegen.Wavegen, pool *packet.P
 		EventClient: cl,
 
 		pool:       pool,
-		stateMutex: &sync.RWMutex{},
+		stateMutex: &sync.Mutex{},
 		wavegen:    wavegen, // TODO: Make this an interface
 	}
 

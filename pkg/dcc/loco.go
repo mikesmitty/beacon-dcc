@@ -17,17 +17,17 @@ type LocoState struct {
 // FIXME: Un-export this function
 func (d *DCC) LocoState(loco uint16) (LocoState, error) {
 	// Read-only lock for concurrent read access
-	d.stateMutex.RLock()
+	d.stateMutex.Lock()
 	defer func() { // FIXME: Cleanup
 		if r := recover(); r != nil {
 			println("Recovered from panic in LocoState:")
 		}
 	}()
 	state, ok := d.state[loco]
-	if d.stateMutex.TryRLock() {
+	if d.stateMutex.TryLock() {
 		println("double unlock in LocoState")
 	}
-	d.stateMutex.RUnlock()
+	d.stateMutex.Unlock()
 	if !ok {
 		return LocoState{}, fmt.Errorf("state not found for loco: %d", loco)
 	}
@@ -149,7 +149,7 @@ func (d *DCC) dumpLocoState() {
 	buf := new(bytes.Buffer)
 	buf.Write([]byte("<*\n"))
 
-	d.stateMutex.RLock()
+	d.stateMutex.Lock()
 	defer func() { // FIXME: Cleanup
 		if r := recover(); r != nil {
 			println("Recovered from panic in dumpLocoState:")
@@ -160,10 +160,10 @@ func (d *DCC) dumpLocoState() {
 	}
 
 	fmt.Fprintf(buf, "Total=%d *>\n", len(d.state))
-	if d.stateMutex.TryRLock() { // FIXME: Cleanup
+	if d.stateMutex.TryLock() { // FIXME: Cleanup
 		println("double unlock in dumpLocoState")
 	}
-	d.stateMutex.RUnlock()
+	d.stateMutex.Unlock()
 
 	d.Publish(buf)
 }
