@@ -24,18 +24,30 @@ func NewEventBus() *EventBus {
 
 func (eb *EventBus) Subscribe(topic string, clientId string, ch chan Event) {
 	eb.mux.Lock()
+	defer func() { // FIXME: Cleanup
+		if r := recover(); r != nil {
+			println("Recovered from panic in Subscribe:")
+		}
+	}()
 
 	// Add the channel to the list of subscribers for this topic.
 	if eb.subscribers[topic] == nil {
 		eb.subscribers[topic] = make(map[string]chan Event)
 	}
 	eb.subscribers[topic][clientId] = ch
-
+	if eb.mux.TryLock() {
+		println("double unlock in Subscribe")
+	}
 	eb.mux.Unlock()
 }
 
 func (eb *EventBus) Unsubscribe(topic string, clientId string) {
 	eb.mux.Lock()
+	defer func() { // FIXME: Cleanup
+		if r := recover(); r != nil {
+			println("Recovered from panic in Unsubscribe:")
+		}
+	}()
 
 	if subs, ok := eb.subscribers[topic]; ok {
 		delete(subs, clientId)
@@ -44,12 +56,19 @@ func (eb *EventBus) Unsubscribe(topic string, clientId string) {
 			delete(eb.subscribers, topic)
 		}
 	}
-
+	if eb.mux.TryLock() {
+		println("double unlock in Unsubscribe")
+	}
 	eb.mux.Unlock()
 }
 
 func (eb *EventBus) Publish(topic, clientId string, data any) {
 	eb.mux.Lock()
+	defer func() { // FIXME: Cleanup
+		if r := recover(); r != nil {
+			println("Recovered from panic in Unsubscribe:")
+		}
+	}()
 
 	if subscribers, ok := eb.subscribers[topic]; ok {
 		event := Event{Topic: topic, ClientID: clientId, Data: data}
@@ -63,13 +82,23 @@ func (eb *EventBus) Publish(topic, clientId string, data any) {
 			}
 		}
 	}
-
+	if eb.mux.TryLock() {
+		println("double unlock in Publish")
+	}
 	eb.mux.Unlock()
 }
 
 func (eb *EventBus) SubscriberCount(topic string) int {
 	eb.mux.Lock()
+	defer func() { // FIXME: Cleanup
+		if r := recover(); r != nil {
+			println("Recovered from panic in SubscriberCount:")
+		}
+	}()
 	subs := len(eb.subscribers[topic])
+	if eb.mux.TryLock() {
+		println("double unlock in SubscriberCount")
+	}
 	eb.mux.Unlock()
 	return subs
 }

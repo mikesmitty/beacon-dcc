@@ -28,6 +28,18 @@ var (
 )
 
 func main() {
+	for {
+		println("Starting loop...")
+		loop() // FIXME: Cleanup
+	}
+}
+
+func loop() {
+	// defer func() { // FIXME: Cleanup
+	// 	if r := recover(); r != nil {
+	// 		println("Recovered from panic")
+	// 	}
+	// }()
 	/* FIXME: Cleanup
 	time.Sleep(3 * time.Second)
 
@@ -42,15 +54,16 @@ func main() {
 	dex := dccex.NewDCCEX(bus.NewEventClient("dccex", topic.BroadcastDex))
 	dex.Event.Subscribe(topic.ReceiveCmdSerial)
 
-	serialOptions := map[string]serial.Serialer{
-		"serial": machine.Serial,
+	serialOptions := map[string]Serialer{
+		// "serial": machine.Serial,
 		// FIXME: Handle initialization of USBCDC if necessary
 		// "usb":    machine.USBCDC,
-		// "uart":   machine.DefaultUART,
+		"uart": machine.DefaultUART,
 	}
 
 	serials := make(map[string]*serial.Serial)
 	for id, s := range serialOptions {
+		s.Configure(machine.UARTConfig{})
 		serials[id] = serial.NewSerial(s, bus.NewEventClient(id, topic.ReceiveCmdSerial))
 		serials[id].Event.Subscribe(topic.BroadcastDex, topic.BroadcastDebug)
 	}
@@ -100,6 +113,12 @@ func main() {
 
 	go func() {
 		for {
+			dex.Update() // DCC-EX command processing
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+	go func() {
+		for {
 			d.Update() // DCC main loop
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -114,7 +133,7 @@ func main() {
 			m.Update()
 		}
 		// runtime.Gosched()
-		time.Sleep(50 * time.Microsecond) // FIXME: Cleanup - this should be a tight loop eventually
+		time.Sleep(100 * time.Microsecond) // FIXME: Cleanup - this should be a tight loop eventually
 	}
 }
 
@@ -153,4 +172,12 @@ func InitMotor(profiles map[string]motor.MotorShieldProfile, bus *event.EventBus
 	}
 
 	return motors
+}
+
+type Serialer interface {
+	WriteByte(c byte) error
+	Write(data []byte) (n int, err error)
+	Buffered() int
+	ReadByte() (byte, error)
+	Configure(config machine.UARTConfig) error
 }
