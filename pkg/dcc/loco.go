@@ -24,9 +24,6 @@ func (d *DCC) LocoState(loco uint16) (LocoState, error) {
 		}
 	}()
 	state, ok := d.state[loco]
-	if d.stateMutex.TryRLock() {
-		println("double unlock in LocoState")
-	}
 	d.stateMutex.RUnlock()
 	if !ok {
 		return LocoState{}, fmt.Errorf("state not found for loco: %d", loco)
@@ -43,9 +40,6 @@ func (d *DCC) SetLocoState(loco uint16, state LocoState) {
 		}
 	}()
 	d.state[loco] = state
-	if d.stateMutex.TryLock() {
-		println("double unlock in SetLocoState")
-	}
 	d.stateMutex.Unlock()
 }
 
@@ -58,9 +52,6 @@ func (d *DCC) RemoveLocoState(loco uint16) {
 		}
 	}()
 	delete(d.state, loco)
-	if d.stateMutex.TryLock() {
-		println("double unlock in RemoveLocoState")
-	}
 	d.stateMutex.Unlock()
 }
 
@@ -160,9 +151,6 @@ func (d *DCC) dumpLocoState() {
 	}
 
 	fmt.Fprintf(buf, "Total=%d *>\n", len(d.state))
-	if d.stateMutex.TryRLock() { // FIXME: Cleanup
-		println("double unlock in dumpLocoState")
-	}
 	d.stateMutex.RUnlock()
 
 	d.Publish(buf)

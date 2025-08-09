@@ -35,9 +35,6 @@ func (eb *EventBus) Subscribe(topic string, clientId string, ch chan Event) {
 		eb.subscribers[topic] = make(map[string]chan Event)
 	}
 	eb.subscribers[topic][clientId] = ch
-	if eb.mux.TryLock() {
-		println("double unlock in Subscribe")
-	}
 	eb.mux.Unlock()
 }
 
@@ -55,9 +52,6 @@ func (eb *EventBus) Unsubscribe(topic string, clientId string) {
 		if len(subs) == 0 {
 			delete(eb.subscribers, topic)
 		}
-	}
-	if eb.mux.TryLock() {
-		println("double unlock in Unsubscribe")
 	}
 	eb.mux.Unlock()
 }
@@ -82,9 +76,6 @@ func (eb *EventBus) Publish(topic, clientId string, data any) {
 			}
 		}
 	}
-	if eb.mux.TryLock() {
-		println("double unlock in Publish")
-	}
 	eb.mux.Unlock()
 }
 
@@ -96,9 +87,6 @@ func (eb *EventBus) SubscriberCount(topic string) int {
 		}
 	}()
 	subs := len(eb.subscribers[topic])
-	if eb.mux.TryLock() {
-		println("double unlock in SubscriberCount")
-	}
 	eb.mux.Unlock()
 	return subs
 }
