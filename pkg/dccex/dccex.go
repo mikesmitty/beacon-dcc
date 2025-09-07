@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/event"
+	"github.com/mikesmitty/beacon-dcc/pkg/shared"
+	"github.com/mikesmitty/beacon-dcc/pkg/track"
 )
 
 /* DCC-EX Command Set
@@ -84,20 +86,25 @@ type HandlerFunc func(resp *bytes.Buffer, cmd byte, params [][]byte) error
 
 type DCCEX struct {
 	handlers map[byte]HandlerFunc
+	info     shared.BoardInfo
+	tracks   map[string]track.TrackStatus
 
 	Event *event.EventClient
 }
 
-func NewDCCEX(cl *event.EventClient) *DCCEX {
+func NewDCCEX(info shared.BoardInfo, cl *event.EventClient) *DCCEX {
 	d := &DCCEX{
 		Event: cl,
 
 		handlers: make(map[byte]HandlerFunc),
+		info:     info,
+		tracks:   make(map[string]track.TrackStatus),
 	}
 
 	// Register built-in command handlers
-	d.RegisterCommandHandler(cmdOn, '1')
-	d.RegisterCommandHandler(cmdOff, '0')
+	d.RegisterCommandHandler(d.cmdOff, '0')
+	d.RegisterCommandHandler(d.cmdOn, '1')
+	d.RegisterCommandHandler(d.cmdStatus, 's')
 
 	return d
 }
@@ -105,29 +112,33 @@ func NewDCCEX(cl *event.EventClient) *DCCEX {
 func (d *DCCEX) Update() {
 	select {
 	case evt := <-d.Event.Receive:
-		msg, ok := evt.Data.(*bytes.Buffer)
-		if !ok {
-			return
+		switch msg := evt.Data.(type) {
+		case *bytes.Buffer:
+			d.handleCmdBuffer(evt, msg)
+		case track.TrackStatus:
+			d.tracks[msg.ID] = msg
 		}
-
-		input := msg.Bytes()
-		if len(input) == 0 {
-			return
-		}
-
-		response, err := d.handleCommand(evt.ClientID, input)
-		if response.Len() == 0 && err == nil {
-			// Most likely another module will respond
-			return
-		}
-		if err != nil {
-			response.WriteString("<X>")
-			// FIXME: Log error
-		}
-		d.Event.Publish(response)
 	default:
 		// No event to process
 	}
+}
+
+func (d *DCCEX) handleCmdBuffer(evt event.Event, buf *bytes.Buffer) {
+	input := buf.Bytes()
+	if len(input) == 0 {
+		return
+	}
+
+	response, err := d.handleCommand(evt.ClientID, input)
+	if response.Len() == 0 && err == nil {
+		// Most likely another module will respond
+		return
+	}
+	if err != nil {
+		response.WriteString("<X>")
+		// FIXME: Log error
+	}
+	d.Event.Publish(response)
 }
 
 // FIXME: Is there a use for clientId here?
@@ -137,7 +148,7 @@ func (d *DCCEX) handleCommand(clientId string, input []byte) (*bytes.Buffer, err
 		return buf, fmt.Errorf("Empty command received")
 	}
 
-	words := bytes.Split(input, []byte{' '})
+	words := bytes.Fields(input)
 	cmd := input[0]
 	params := words[1:]
 	if len(params) > MaxParameters {

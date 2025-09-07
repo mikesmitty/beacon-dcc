@@ -61,26 +61,26 @@ const (
 type DCC struct {
 	shared.BoardInfo
 
-	loopState  LoopState
-	state      map[uint16]LocoState
-	stateMutex *sync.RWMutex // TODO: Evaluate sync.Map for high concurrency
-	wavegen    *wavegen.Wavegen
-	pool       *packet.PacketPool
+	loopState LoopState
+	state     map[uint16]LocoState
+	mu        *sync.RWMutex // TODO: Evaluate sync.Map for high concurrency
+	wavegen   *wavegen.Wavegen
+	pool      *packet.PacketPool
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
 func NewDCC(boardInfo shared.BoardInfo, wavegen *wavegen.Wavegen, pool *packet.PacketPool, cl *event.EventClient) *DCC {
 	d := &DCC{
-		BoardInfo:   boardInfo,
-		EventClient: cl,
+		BoardInfo: boardInfo,
+		Event:     cl,
 
-		pool:       pool,
-		stateMutex: &sync.RWMutex{},
-		wavegen:    wavegen, // TODO: Make this an interface
+		pool:    pool,
+		mu:      &sync.RWMutex{},
+		wavegen: wavegen, // TODO: Make this an interface
 	}
 
-	d.Diag("DCC-EX V-%s / %s / %s G-%s", d.Version, d.Board, d.ShieldName, d.GitSHA) // FIXME: Change hardcoded name?
+	d.Event.Diag("iDCC-EX V-%s / %s / %s G-%s", d.Version, d.Board, d.ShieldName, d.GitSHA) // FIXME: Change hardcoded name?
 
 	return d
 }
@@ -95,7 +95,7 @@ func (d *DCC) Update() {
 func (d *DCC) NewPacket(loco uint16) *packet.Packet {
 	p := d.pool.NewPacket()
 	if p == nil {
-		d.Debug("Failed to create new packet for loco %d", loco)
+		d.Event.Debug("Failed to create new packet for loco %d", loco)
 		return nil
 	}
 
@@ -125,7 +125,7 @@ func (d *DCC) issueReminders() {
 func (d *DCC) sendReminderPackets(loco uint16) {
 	state, err := d.LocoState(loco)
 	if err != nil {
-		d.Debug("error getting loco %d state: %v", loco, err)
+		d.Event.Debug("error getting loco %d state: %v", loco, err)
 		return
 	}
 
@@ -168,13 +168,18 @@ func (d *DCC) sendReminderPackets(loco uint16) {
 	if p != nil {
 		p.Priority = packet.LowPriority
 		p.Repeats = 0
-		d.PublishTo(topic.WavegenQueue, p)
+		d.Event.PublishTo(topic.WavegenQueue, p)
 	}
 }
 
-func (d *DCC) Broadcast(input string, args ...any) {
+func (d *DCC) Broadcastf(input string, args ...any) {
 	buf := bytes.NewBuffer(fmt.Appendf(nil, input, args...))
-	d.Publish(buf)
+	d.Event.Publish(buf)
+}
+
+func (d *DCC) Broadcast(input string) {
+	buf := bytes.NewBufferString(input)
+	d.Event.Publish(buf)
 }
 
 func speedStep28(speed128 uint8) uint8 {

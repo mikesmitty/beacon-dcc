@@ -17,6 +17,8 @@ func NewADC(pin shared.Pin) *ADC {
 
 func (a *ADC) InitADC() {}
 
+func (a *ADC) SetBaseline() {}
+
 func (a *ADC) Get() uint16 {
 	return 0
 }

@@ -22,18 +22,18 @@ func (d *DCC) SetThrottle(loco uint16, speed uint8, direction bool) {
 
 func (d *DCC) setThrottle(loco uint16, speedStep uint8) {
 	p := d.setThrottlePacket(loco, speedStep)
-	d.PublishTo(topic.WavegenQueue, p)
+	d.Event.PublishTo(topic.WavegenQueue, p)
 }
 
 func (d *DCC) setThrottlePacket(loco uint16, speedStep uint8) *packet.Packet {
-	d.Diag("setThrottle %d %x", loco, speedStep)
+	d.Event.Diag("setThrottle %d %x", loco, speedStep)
 
 	// Get a new packet with the loco address for the command
 	p := d.NewPacket(loco)
 
 	speedSteps, err := d.LocoSpeedMode(loco)
 	if err != nil {
-		d.Debug("error getting loco %d speed mode: %v", loco, err)
+		d.Event.Debug("error getting loco %d speed mode: %v", loco, err)
 		return nil
 	}
 

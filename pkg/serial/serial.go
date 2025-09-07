@@ -38,13 +38,16 @@ func NewSerial(uart Serialer, cl *event.EventClient) *Serial {
 func (s *Serial) Update() {
 	select {
 	case evt := <-s.Event.Receive:
-		msg, ok := evt.Data.(*bytes.Buffer)
-		if !ok {
-			break
+		switch msg := evt.Data.(type) {
+		case string:
+			s.uart.Write([]byte(msg))
+		case *bytes.Buffer:
+			s.uart.Write(msg.Bytes())
+		default:
+			s.Event.Debug("Serial received unknown data type: %T", evt.Data)
+			return
 		}
-
-		s.uart.Write(msg.Bytes())
-		s.uart.Write([]byte("\r\n")) // FIXME: \r needed?
+		s.uart.Write([]byte("\n"))
 
 	default:
 		s.ReadCommand()

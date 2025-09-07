@@ -8,14 +8,14 @@ const (
 	// BroadcastDiag is the topic where diagnostic messages are published.
 	BroadcastDiag = "broadcast:diag"
 
-	MotorControl = "motor:control:"
-	MotorStatus  = "motor:status:"
-
 	// ReceiveCmdSerial is the topic where commands received from serial input are published.
 	ReceiveCmdSerial = "rxcmd:serial"
 
-	TrackPowerOn  = "track:power:on"
-	TrackPowerOff = "track:power:off"
+	TrackModeJoin   = "track:mode:join"
+	TrackModeUnjoin = "track:mode:unjoin"
+	TrackPowerOn    = "track:power:on"
+	TrackPowerOff   = "track:power:off"
+	TrackStatus     = "track:status"
 
 	// WavegenQueue is the topic where packets are queued for the wave generator.
 	WavegenQueue = "wavegen:queue"

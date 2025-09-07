@@ -1,11 +1,14 @@
 package motor
 
 import (
+	"errors"
 	"time"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/event"
 	"github.com/mikesmitty/beacon-dcc/pkg/pwm"
 	"github.com/mikesmitty/beacon-dcc/pkg/shared"
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
+	"github.com/mikesmitty/beacon-dcc/pkg/track"
 )
 
 const (
@@ -57,31 +60,69 @@ type Motor struct {
 	Event *event.EventClient
 }
 
+var _ track.Driver = (*Motor)(nil)
+
 // NewMotor initializes a new Motor instance with the given ADC pins and current sense factor.
 // Current sense factor is milliamps of output current per ADC unit.
-func NewMotor(trackId string, profile MotorShieldProfile, cl *event.EventClient) *Motor {
+func NewMotor(profile MotorShieldProfile) *Motor {
+	// DCC-EX profiles use the native 12-bit ADC range of most MCUs, but TinyGo normalizes to 16-bit
+	profile.SenseFactor = profile.SenseFactor * 16
+
 	m := &Motor{
 		MotorShieldProfile: profile,
-		Event:              cl,
-		trackId:            trackId,
 
-		currentLimit:     uint16(float32(profile.MaxCurrent) / profile.SenseFactor),
-		progCurrentLimit: uint16(250.0 / profile.SenseFactor), // 250mA
+		currentLimit:     uint16(float32(profile.MaxCurrent) * profile.SenseFactor),
+		progCurrentLimit: uint16(250.0 * profile.SenseFactor), // 250mA
 
 		lastStateTime: make(map[PowerMode]time.Time),
 		prevState:     PowerModeNone,
 		state:         PowerModeOff,
 	}
 
-	// FIXME: Start with the motor off
-
-	m.ADC.InitADC()
-
 	return m
+}
+
+func (m *Motor) SetEventClient(cl *event.EventClient) {
+	m.Event = cl
+}
+
+func (m *Motor) Init(trackId string) error {
+	m.trackId = trackId
+	// Zero out the current reading with the power off
+	m.setPowerMode(PowerModeOff)
+	m.ADC.InitADC()
+	time.Sleep(1 * time.Second) // Let ADC stabilize
+	m.ADC.SetBaseline()
+	return nil
+}
+
+func (m *Motor) Power() (bool, error) {
+	switch m.state {
+	case PowerModeOff:
+		return false, nil
+	case PowerModeOn:
+		return true, nil
+	case PowerModeAlert:
+		return true, errors.New("Motor is in alert state")
+	case PowerModeOverload:
+		return false, errors.New("Motor is in overload state")
+	default:
+		return false, nil
+	}
+}
+
+func (m *Motor) SetPower(on bool) error {
+	if on {
+		m.setPowerMode(PowerModeOn)
+	} else {
+		m.setPowerMode(PowerModeOff)
+	}
+	return nil
 }
 
 // Check for shorts or ack responses on programming tracks
 func (m *Motor) Update() {
+	/* FIXME: Cleanup
 	select {
 	case evt := <-m.Event.Receive:
 		switch msg := evt.Data.(type) {
@@ -93,6 +134,7 @@ func (m *Motor) Update() {
 	default:
 		// No event to process
 	}
+	*/
 
 	// TODO: Add prog-track config?
 
@@ -112,11 +154,22 @@ func (m *Motor) Update() {
 	}
 
 	if m.prevState != m.state {
-		m.Event.Publish(m.state.String())
+		var on bool
+		switch m.state {
+		case PowerModeOn, PowerModeAlert:
+			on = true
+		}
+		m.Event.PublishTo(topic.TrackStatus, track.TrackStatus{
+			ID:       m.trackId,
+			Power:    on,
+			Alert:    m.state == PowerModeAlert,
+			Overload: m.state == PowerModeOverload,
+		})
 	}
 	m.prevState = m.state
 }
 
+// FIXME: Cleanup
 func (m *Motor) handleStringEvent(msg string) {
 	newState := m.state
 	switch msg {
@@ -252,7 +305,7 @@ func (m *Motor) checkOverCurrent() (bool, uint16) {
 	// Refresh the current reading
 	m.lastReading = m.ADC.Get()
 
-	mA := uint16(float32(m.lastReading) * m.SenseFactor)
+	mA := uint16(float32(m.lastReading) / m.SenseFactor)
 	if m.lastReading > m.currentLimit || (m.progMode && m.lastReading > m.progCurrentLimit) {
 		m.Event.Debug("TRACK ALERT %dmA", mA)
 		// FIXME: Cleanup
@@ -320,4 +373,5 @@ func (m *Motor) limitInrush(on bool) {
 type ADC interface {
 	InitADC()
 	Get() uint16
+	SetBaseline()
 }

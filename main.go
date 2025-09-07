@@ -4,6 +4,7 @@ package main
 
 import (
 	"machine"
+	"strings"
 	"time"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/adc"
@@ -13,7 +14,6 @@ import (
 	"github.com/mikesmitty/beacon-dcc/pkg/motor"
 	"github.com/mikesmitty/beacon-dcc/pkg/packet"
 	"github.com/mikesmitty/beacon-dcc/pkg/queue"
-	"github.com/mikesmitty/beacon-dcc/pkg/serial"
 	"github.com/mikesmitty/beacon-dcc/pkg/shared"
 	"github.com/mikesmitty/beacon-dcc/pkg/topic"
 	"github.com/mikesmitty/beacon-dcc/pkg/track"
@@ -21,49 +21,29 @@ import (
 )
 
 var (
-	board      = "metro-rp2350"
-	gitSHA     = ""
-	shieldName = "EX-MotorShield8874"
-	version    = ""
+	board      string
+	gitSHA     string
+	shieldName string
+	version    string
 )
 
 func main() {
-	/* FIXME: Cleanup
-	time.Sleep(3 * time.Second)
+	println("main.main has launched") // FIXME: Cleanup
 
-	led := machine.GPIO23
-	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	led.High()
-	*/
+	boardInfo := shared.BoardInfo{
+		Board:      board,
+		GitSHA:     gitSHA,
+		ShieldName: shieldName,
+		Version:    strings.TrimPrefix(version, "v"),
+	}
 
 	bus := event.NewEventBus()
-	cl := bus.NewEventClient("main", "main")
 
-	dex := dccex.NewDCCEX(bus.NewEventClient("dccex", topic.BroadcastDex))
-	dex.Event.Subscribe(topic.ReceiveCmdSerial)
+	serials := InitSerials(bus, topic.ReceiveCmdSerial, topic.BroadcastDex, topic.BroadcastDiag, topic.BroadcastDebug)
+	go RunEvery(serials.Update, 50*time.Millisecond)
 
-	serialOptions := map[string]serial.Serialer{
-		"serial": machine.Serial,
-		// FIXME: Handle initialization of USBCDC if necessary
-		// "usb":    machine.USBCDC,
-		// "uart":   machine.DefaultUART,
-	}
-
-	serials := make(map[string]*serial.Serial)
-	for id, s := range serialOptions {
-		serials[id] = serial.NewSerial(s, bus.NewEventClient(id, topic.ReceiveCmdSerial))
-		serials[id].Event.Subscribe(topic.BroadcastDex, topic.BroadcastDebug)
-	}
-
-	go func() {
-		for {
-			for _, s := range serials {
-				s.Update()
-			}
-			time.Sleep(10 * time.Microsecond)
-		}
-	}()
-	cl.Debug("-----------------------------------------------------")
+	dex := dccex.NewDCCEX(boardInfo, bus.NewEventClient("dccex", topic.BroadcastDex))
+	dex.Event.Subscribe(topic.ReceiveCmdSerial, topic.TrackStatus)
 
 	pq := queue.NewPriorityQueue(32, bus.NewEventClient("priorityqueue", topic.WavegenSend))
 	pq.Event.Subscribe(topic.WavegenQueue)
@@ -77,44 +57,26 @@ func main() {
 
 	profiles := motor.ShieldEX8874
 	// profiles := motor.ArduinoMotorShieldRev3
-	motors := InitMotor(profiles, bus)
-
-	tracks := make(map[string]*track.Track)
-	for id := range motors {
-		tracks[id] = track.NewTrack(id, track.TrackModeMain, bus.NewEventClient("track"+id, topic.MotorControl+id))
-		tracks[id].Event.Subscribe(topic.MotorControl + id)
+	tracks, _, err := InitTracks(profiles, bus)
+	if err != nil {
+		panic(err)
 	}
 
-	board := shared.BoardInfo{
-		Board:      board,
-		GitSHA:     gitSHA,
-		ShieldName: shieldName,
-		Version:    version,
-	}
-	d := dcc.NewDCC(board, w, pool, bus.NewEventClient("dcc", topic.BroadcastDex))
-	cl.Debug("DCC initialized")
+	d := dcc.NewDCC(boardInfo, w, pool, bus.NewEventClient("dcc", topic.BroadcastDex))
 
 	// The wavegen and priority queue loops stall frequently so they get their own goroutines
 	go w.Loop()
 	go pq.Loop()
 
-	go func() {
-		for {
-			d.Update() // DCC main loop
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
+	go RunEvery(dex.Update, 50*time.Millisecond) // DCC-EX command processing
+	go RunEvery(d.Update, 5*time.Millisecond)    // DCC main loop
 
 	for {
 		// Handle track status events and power monitoring (short-circuit detection)
 		for _, t := range tracks {
 			t.Update()
 		}
-		for _, m := range motors {
-			m.Update()
-		}
-		// runtime.Gosched()
-		time.Sleep(50 * time.Microsecond) // FIXME: Cleanup - this should be a tight loop eventually
+		time.Sleep(1 * time.Millisecond)
 	}
 }
 
@@ -139,7 +101,7 @@ func InitWavegen(signalPin, brakePin machine.Pin, packetReturn func(*packet.Pack
 	return w, nil
 }
 
-func InitMotor(profiles map[string]motor.MotorShieldProfile, bus *event.EventBus) map[string]*motor.Motor {
+func InitTracks(profiles map[string]motor.MotorShieldProfile, bus *event.EventBus) (map[string]*track.Track, map[string]*motor.Motor, error) {
 	adcs := map[string]motor.ADC{
 		"A": adc.NewADC(machine.ADC1),
 		"B": adc.NewADC(machine.ADC2),
@@ -148,9 +110,27 @@ func InitMotor(profiles map[string]motor.MotorShieldProfile, bus *event.EventBus
 	motors := make(map[string]*motor.Motor)
 	for id, profile := range profiles {
 		profile.ADC = adcs[id]
-		motors[id] = motor.NewMotor(id, profile, bus.NewEventClient(id, topic.MotorStatus+id))
-		motors[id].Event.Subscribe(topic.MotorControl + id)
+		motors[id] = motor.NewMotor(profile)
 	}
 
-	return motors
+	tracks := make(map[string]*track.Track)
+	for id := range motors {
+		t, err := track.NewTrack(id, track.TrackModeMain, motors[id], bus.NewEventClient("track"+id, topic.TrackStatus))
+		if err != nil {
+			return nil, nil, err
+		}
+		tracks[id] = t
+	}
+
+	return tracks, motors, nil
+}
+
+func RunEvery(fn func(), interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	for {
+		select {
+		case <-ticker.C:
+			fn()
+		}
+	}
 }
