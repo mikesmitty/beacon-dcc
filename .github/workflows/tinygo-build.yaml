@@ -38,7 +38,7 @@ jobs:
           tinygo build -o beacon-dcc.uf2 -target pico-plus2
           echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: beacon-dcc-${{ steps.build.outputs.short_sha }}.uf2
           path: beacon-dcc.uf2
