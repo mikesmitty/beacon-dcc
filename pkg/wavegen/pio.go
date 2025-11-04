@@ -7,11 +7,14 @@ import (
 	"machine"
 	"time"
 
+	"github.com/mikesmitty/beacon-dcc/pkg/packet"
 	"github.com/mikesmitty/beacon-dcc/pkg/shared"
 	pio "github.com/tinygo-org/pio/rp2-pio"
 )
 
-func (w *Wavegen) initPIO(sp, bp shared.Pin) error {
+const smFreq = 500_000
+
+func (w *Wavegen) initPIO(mode WavegenMode, sp shared.Pin, signalPinCount uint8, bp shared.Pin) error {
 	signalPin := sp.(machine.Pin)
 	brakePin := bp.(machine.Pin)
 
@@ -27,7 +30,7 @@ func (w *Wavegen) initPIO(sp, bp shared.Pin) error {
 		return errors.New("wavegen already initialized")
 	}
 
-	err := w.initWavegenPIO(0, signalPin)
+	err := w.initWavegenPIO(mode, 0, signalPin, signalPinCount)
 	if err != nil {
 		return err
 	}
@@ -63,13 +66,34 @@ func (w *Wavegen) initSM(pioNum int) (pio.StateMachine, *pio.PIO, error) {
 	return sm, Pio, nil
 }
 
-func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
+func (w *Wavegen) initWavegenPIO(mode WavegenMode, pioNum int, signalPin machine.Pin, pinCount uint8) error {
+	var instructions []uint16
+	var origin int8
+	var programDefaultConfig func(offset uint8) pio.StateMachineConfig
+
+	switch mode {
+	case NormalMode:
+		instructions = wavegenInstructions
+		origin = wavegenOrigin
+		programDefaultConfig = wavegenProgramDefaultConfig
+	case NoCutoutMode:
+		instructions = wavegenNoCutoutInstructions
+		origin = wavegenNoCutoutOrigin
+		programDefaultConfig = wavegenNoCutoutProgramDefaultConfig
+	case ServiceMode:
+		instructions = wavegenServiceModeInstructions
+		origin = wavegenServiceModeOrigin
+		programDefaultConfig = wavegenServiceModeProgramDefaultConfig
+	default:
+		return errors.New("invalid wavegen mode")
+	}
+
 	sm, Pio, err := w.initSM(pioNum)
 	if err != nil {
 		return err
 	}
 
-	offset, err := Pio.AddProgram(wavegenInstructions, wavegenOrigin)
+	offset, err := Pio.AddProgram(instructions, origin)
 	if err != nil {
 		return err
 	}
@@ -81,7 +105,7 @@ func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
 
 	signalPin.Configure(machine.PinConfig{Mode: Pio.PinMode()})
 
-	cfg := wavegenProgramDefaultConfig(offset)
+	cfg := programDefaultConfig(offset)
 	// Disable autopush
 	cfg.SetInShift(false, false, 0)
 	// Enable autopull
@@ -89,7 +113,7 @@ func (w *Wavegen) initWavegenPIO(pioNum int, signalPin machine.Pin) error {
 	// Combine the TX/RX FIFO buffers to allow extra breathing room between buffer writes
 	cfg.SetFIFOJoin(pio.FifoJoinTx)
 	// Set set pin to the signal pins
-	cfg.SetSetPins(signalPin, 2)
+	cfg.SetSetPins(signalPin, pinCount)
 	// Enable sticky pins (set pins will remain set until cleared)
 	cfg.SetOutSpecial(true, false, machine.NoPin)
 
@@ -150,15 +174,19 @@ func (w *Wavegen) initCutoutPIO(pioNum int, brakePin machine.Pin) error {
 	return nil
 }
 
-func (w *Wavegen) send(msg ...uint32) {
-	if w.waveSM == nil || len(msg) == 0 || msg[0] == 0 {
+func (w *Wavegen) send(packet *packet.Packet) {
+	if w.waveSM == nil || packet == nil || packet.IsInvalid() {
 		// Can't send a zero-length message or to a nil state machine
 		return
 	}
-	for _, m := range msg {
+	for _, m := range packet.Encode() {
 		for w.waveSM.IsTxFIFOFull() {
 			time.Sleep(1 * time.Millisecond)
 		}
 		w.waveSM.TxPut(m)
+		// Sleep between messages to yield to other goroutines while the messages are being sent.
+		// The shortest possible DCC message takes >4 milliseconds to send, and we likely have a
+		// full FIFO at all times so this is a good time to yield.
+		time.Sleep(1 * time.Millisecond)
 	}
 }
