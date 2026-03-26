@@ -45,7 +45,7 @@ jobs:
           sudo dpkg -i tinygo_*.deb
 
       - name: Build
-        run: tinygo build -o rp24-dcc-decoder_${VERSION}.uf2 -target metro-rp2350 -ldflags="-X 'main.version=${VERSION}'"
+        run: make uf2 FILENAME="beacon-dcc-${VERSION}"
         env:
           VERSION: ${{ needs.release-please.outputs.version }}
 
