@@ -2,7 +2,6 @@ package motor
 
 import (
 	"errors"
-	"machine"
 	"time"
 
 	"github.com/mikesmitty/beacon-dcc/pkg/event"
@@ -85,24 +84,6 @@ func NewMotor(profile MotorShieldProfile) *Motor {
 
 func (m *Motor) SetEventClient(cl *event.EventClient) {
 	m.Event = cl
-}
-
-func (m *Motor) Init(trackId string) error {
-	m.trackId = trackId
-
-	if m.PowerPin != shared.NoPin {
-		m.PowerPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	}
-	if m.FaultPin != shared.NoPin {
-		m.FaultPin.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	}
-
-	// Zero out the current reading with the power off
-	m.setPowerMode(PowerModeOff)
-	m.ADC.InitADC()
-	time.Sleep(1 * time.Second) // Let ADC stabilize
-	m.ADC.SetBaseline()
-	return nil
 }
 
 func (m *Motor) Power() (bool, error) {
