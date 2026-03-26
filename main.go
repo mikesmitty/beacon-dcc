@@ -4,46 +4,138 @@ package main
 
 import (
 	"machine"
+	"strings"
 	"time"
 
+	"github.com/mikesmitty/beacon-dcc/pkg/adc"
+	"github.com/mikesmitty/beacon-dcc/pkg/dcc"
+	"github.com/mikesmitty/beacon-dcc/pkg/dccex"
+	"github.com/mikesmitty/beacon-dcc/pkg/event"
+	"github.com/mikesmitty/beacon-dcc/pkg/motor"
+	"github.com/mikesmitty/beacon-dcc/pkg/packet"
+	"github.com/mikesmitty/beacon-dcc/pkg/queue"
+	"github.com/mikesmitty/beacon-dcc/pkg/shared"
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
+	"github.com/mikesmitty/beacon-dcc/pkg/track"
 	"github.com/mikesmitty/beacon-dcc/pkg/wavegen"
 )
 
+var (
+	board      string
+	gitSHA     string
+	shieldName string
+	version    string
+)
+
 func main() {
-	time.Sleep(3 * time.Second)
+	boardInfo := shared.BoardInfo{
+		Board:      board,
+		GitSHA:     gitSHA,
+		ShieldName: shieldName,
+		Version:    strings.TrimPrefix(version, "v"),
+	}
 
-	signalPin := machine.GPIO22
-	signalPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	brakePin := machine.GPIO9
-	brakePin.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	time.Sleep(5 * time.Second) // FIXME: Cleanup
 
-	// w, err := wavegen.NewWavegen(0, signalPin, brakePin)
-	_, err := wavegen.NewWavegen(0, signalPin, brakePin)
+	bus := event.NewEventBus()
+
+	serials := InitSerials(bus, topic.ReceiveCmdSerial, topic.BroadcastDex, topic.BroadcastDiag, topic.BroadcastDebug)
+	go RunEvery(serials.Update, 100*time.Millisecond)
+
+	dex := dccex.NewDCCEX(boardInfo, bus.NewEventClient("dccex", topic.BroadcastDex))
+	dex.Event.Subscribe(topic.ReceiveCmdSerial, topic.TrackStatus)
+
+	pq := queue.NewPriorityQueue(32, bus.NewEventClient("priorityqueue", topic.WavegenSend))
+	pq.Event.Subscribe(topic.WavegenQueue)
+
+	pool := packet.NewPacketPool(dcc.MaxPacketSize)
+
+	w, err := InitWavegen(machine.GPIO22, machine.GPIO9, pool.DiscardPacket, bus)
 	if err != nil {
 		panic(err)
 	}
-	println("Wavegen initialized")
 
-	// state := brakePin.Get()
-	// now := time.Now()
-	// then := now
-	// w.Enable(true) // FIXME: Cleanup
+	profiles := motor.ShieldEX8874
+	// profiles := motor.ArduinoMotorShieldRev3
+	tracks, _, err := InitTracks(profiles, bus)
+	if err != nil {
+		panic(err)
+	}
+
+	d := dcc.NewDCC(boardInfo, w, pool, bus.NewEventClient("dcc", topic.BroadcastDex))
+
+	// Register DCC command handlers with the DCC-EX command processor
+	dex.RegisterCommandHandler(d.CmdThrottle, 't')
+	dex.RegisterCommandHandler(d.CmdForgetLoco, '-')
+
+	// The wavegen and priority queue loops stall frequently so they get their own goroutines
+	go w.Loop()
+	go pq.Loop()
+
+	go RunEvery(dex.Update, 50*time.Millisecond) // DCC-EX command processing
+	go RunEvery(d.Update, 5*time.Millisecond)    // DCC main loop
+
 	for {
-		// if state != brakePin.Get() {
-		// 	state = brakePin.Get()
-		// 	now = time.Now()
-		// 	if state {
-		// 		fmt.Printf("1: %d us\r\n", now.Sub(then).Microseconds())
-		// 	} else {
-		// 		fmt.Printf("0: %d us\r\n", now.Sub(then).Microseconds())
-		// 	}
-		// 	then = now
-		// }
-		// fmt.Printf("X: %d\r\n", w.GetX())
-		// signalPin.High()
-		// brakePin.High()
-		// time.Sleep(100 * time.Microsecond)
-		// brakePin.Low()
-		// time.Sleep(100 * time.Microsecond)
+		// Handle track status events and power monitoring (short-circuit detection)
+		for _, t := range tracks {
+			t.Update()
+		}
+		time.Sleep(1 * time.Millisecond)
+	}
+}
+
+func InitWavegen(signalPin, brakePin machine.Pin, packetReturn func(*packet.Packet), bus *event.EventBus) (*wavegen.Wavegen, error) {
+	signalPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	brakePin.Configure(machine.PinConfig{Mode: machine.PinOutput})
+
+	config := wavegen.WavegenConfig{
+		Mode:           wavegen.NormalMode,
+		SignalPin:       signalPin,
+		SignalPinCount:  2,
+		BrakePin:        brakePin,
+		PacketReturn:    packetReturn,
+	}
+
+	w, err := wavegen.NewWavegen(config, bus.NewEventClient("wavegen", topic.WavegenQueue))
+	if err != nil {
+		return nil, err
+	}
+	w.Event.Subscribe(topic.WavegenSend)
+	w.Enable(true)
+
+	return w, nil
+}
+
+func InitTracks(profiles map[string]motor.MotorShieldProfile, bus *event.EventBus) (map[string]*track.Track, map[string]*motor.Motor, error) {
+	adcs := map[string]motor.ADC{
+		"A": adc.NewADC(machine.ADC1),
+		"B": adc.NewADC(machine.ADC2),
+	}
+
+	motors := make(map[string]*motor.Motor)
+	for id, profile := range profiles {
+		profile.ADC = adcs[id]
+		motors[id] = motor.NewMotor(profile)
+	}
+
+	tracks := make(map[string]*track.Track)
+	for id := range motors {
+		t, err := track.NewTrack(id, track.TrackModeMain, motors[id], bus.NewEventClient("track"+id, topic.TrackStatus))
+		if err != nil {
+			return nil, nil, err
+		}
+		tracks[id] = t
+	}
+
+	return tracks, motors, nil
+}
+
+func RunEvery(fn func(), interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	for {
+		select {
+		case <-ticker.C:
+			fn()
+		}
 	}
 }

@@ -1,21 +1,30 @@
-
 .program cutout
 
 .pio_version 1
 
+; Initialize default loop count.
+; Each loop iteration is 1 cycle (2us @ 500kHz).
+; 216 counts * 2us = 432us loop duration.
+; Total time from PEB zero crossing to brake release:
+; 26us (offset) + 434us (loop) + 10us (irq/nop/set) = 470us.
+; This fits within the NMRA S-9.3.2 requirement of 454us - 488us.
+; 216 is 0xD8.
+    set x, 13
+    mov isr, x
+    set x, 8
+    in x, 4           ; ISR = (13 << 4) | 8 = 216
+    mov x, isr        ; X = 216 (Default loop count for pull noblock)
+
 .wrap_target
-
-wait 1 irq prev 0      ; Wait for the Railcom cutout to begin
-set pins, 1       [31] ; Fake cutout duration
-nop               [31] ; Fake cutout duration
-nop               [31] ; Fake cutout duration
-nop               [31] ; Fake cutout duration
-nop               [31] ; Fake cutout duration
-nop               [31] ; Fake cutout duration
-nop               [22] ; Fake cutout duration
-set pins, 0            ; Fake cutout duration
-irq prev 1             ; Return to signal generation
-
+    pull noblock      ; OSR = FIFO if not empty, else OSR = X
+    mov y, osr        ; Y = counter for loop
+    wait 1 irq 4      ; Wait for Railcom start (PIO0 signals IRQ 4)
+    set pins, 1       ; Apply brake (T=26us)
+lp:
+    jmp y--, lp       ; 1 cycle per loop
+    irq prev 5        ; Signal wavegen on PIO0 to wake up
+    nop         [2]   ; Padding (3 cycles) to align with wavegen wrap and preamble start
+    set pins, 0       ; Release brake
 .wrap
 
 % go {

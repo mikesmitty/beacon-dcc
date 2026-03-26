@@ -1,0 +1,178 @@
+package dccex
+
+import (
+	"bytes"
+	"fmt"
+
+	"github.com/mikesmitty/beacon-dcc/pkg/event"
+	"github.com/mikesmitty/beacon-dcc/pkg/shared"
+	"github.com/mikesmitty/beacon-dcc/pkg/track"
+)
+
+/* DCC-EX Command Set
+https://dcc-ex.com/reference/software/command-summary-consolidated.html
+
+Character, Usage
+/, |EX-R| interactive commands
+-, Remove from reminder table
+=, |TM| configuration
+!, Emergency stop
+@, Reserved for future use - LCD messages to JMRI
+#, Request number of supported cabs/locos; heartbeat
++, WiFi AT commands
+?, Reserved for future use
+0, Track power off
+1, Track power on
+a, DCC accessory control
+A, DCC extended accessory control
+b, Write CV bit on main
+B, Write CV bit
+c, Request current command
+C, configure the CS
+d,
+D, Diagnostic commands
+e, Erase EEPROM
+E, Store configuration in EEPROM
+f, Loco decoder function control (deprecated)
+F, Loco decoder function control
+g,
+G,
+h,
+H, Turnout state broadcast
+i, Server details string
+I, Turntable object command, control, and broadcast
+j, Throttle responses
+J, Throttle queries
+k, Block exit  (Railcom)
+K, Block enter (Railcom)
+l, Loco speedbyte/function map broadcast
+L, Reserved for LCC interface (implemented in EXRAIL)
+m, message to throttles (broadcast output)
+m, set momentum
+M, Write DCC packet
+n, Reserved for SensorCam
+N, Reserved for Sensorcam
+o, Neopixel driver (see also IO_NeoPixel.h)
+O, Output broadcast
+p, Broadcast power state
+P, Write DCC packet
+q, Sensor deactivated
+Q, Sensor activated
+r, Broadcast address read on programming track
+R, Read CVs
+s, Display status
+S, Sensor configuration
+t, Cab/loco update command
+T, Turnout configuration/control
+u, Reserved for user commands
+U, Reserved for user commands
+v,
+V, Verify CVs
+w, Write CV on main
+W, Write CV
+x,
+X, Invalid command response
+y,
+Y, Output broadcast
+z, Direct output
+Z, Output configuration/control
+*/
+
+const (
+	MaxParameters = 10
+)
+
+type HandlerFunc func(resp *bytes.Buffer, cmd byte, params [][]byte) error
+
+type DCCEX struct {
+	handlers map[byte]HandlerFunc
+	info     shared.BoardInfo
+	tracks   map[string]track.TrackStatus
+
+	Event *event.EventClient
+}
+
+func NewDCCEX(info shared.BoardInfo, cl *event.EventClient) *DCCEX {
+	d := &DCCEX{
+		Event: cl,
+
+		handlers: make(map[byte]HandlerFunc),
+		info:     info,
+		tracks:   make(map[string]track.TrackStatus),
+	}
+
+	// Register built-in command handlers
+	d.RegisterCommandHandler(d.cmdOff, '0')
+	d.RegisterCommandHandler(d.cmdOn, '1')
+	d.RegisterCommandHandler(d.cmdStatus, 's')
+
+	return d
+}
+
+func (d *DCCEX) Update() {
+	for {
+		select {
+		case evt := <-d.Event.Receive:
+			switch msg := evt.Data.(type) {
+			case *bytes.Buffer:
+				d.handleCmdBuffer(evt, msg)
+			case track.TrackStatus:
+				d.tracks[msg.ID] = msg
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (d *DCCEX) handleCmdBuffer(evt event.Event, buf *bytes.Buffer) {
+	input := buf.Bytes()
+	if len(input) == 0 {
+		return
+	}
+
+	response, err := d.handleCommand(input)
+	if response.Len() == 0 && err == nil {
+		// Most likely another module will respond
+		return
+	}
+	if err != nil {
+		response.WriteString("<X>")
+		d.Event.Debug("Error handling command: %v", err)
+	}
+	d.Event.Publish(response)
+}
+
+func (d *DCCEX) handleCommand(input []byte) (*bytes.Buffer, error) {
+	buf := new(bytes.Buffer)
+	if len(input) == 0 {
+		return buf, fmt.Errorf("Empty command received")
+	}
+
+	words := bytes.Fields(input)
+	cmd := input[0]
+	params := words[1:]
+	if len(params) > MaxParameters {
+		return buf, fmt.Errorf("Too many parameters: %d", len(params))
+	}
+
+	if handler, ok := d.handlers[cmd]; ok {
+		err := handler(buf, cmd, params)
+		if err != nil {
+			return buf, fmt.Errorf("Error handling command %c: %v", cmd, err)
+		}
+		return buf, nil
+	}
+
+	return buf, fmt.Errorf("Unsupported command: %c", cmd)
+}
+
+func (d *DCCEX) RegisterCommandHandler(handler HandlerFunc, opCodes ...byte) error {
+	for _, opCode := range opCodes {
+		if _, exists := d.handlers[opCode]; exists {
+			return fmt.Errorf("Command handler already registered for: %c", opCode)
+		}
+		d.handlers[opCode] = handler
+	}
+	return nil
+}

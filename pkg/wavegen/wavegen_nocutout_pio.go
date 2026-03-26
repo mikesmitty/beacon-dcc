@@ -5,18 +5,18 @@ package wavegen
 import (
 	pio "github.com/tinygo-org/pio/rp2-pio"
 )
-// wavegen
+// wavegenNoCutout
 
-const wavegenWrapTarget = 0
-const wavegenWrap = 30
+const wavegenNoCutoutWrapTarget = 0
+const wavegenNoCutoutWrap = 26
 
-var wavegenInstructions = []uint16{
+var wavegenNoCutoutInstructions = []uint16{
 		//     .wrap_target
 		0xe04f, //  0: set    y, 15
 		0xfc03, //  1: set    pins, 3                [28]
 		0xfb00, //  2: set    pins, 0                [27]
 		0x0081, //  3: jmp    y--, 1
-		0xef03, //  4: set    pins, 3                [15]
+		0xe003, //  4: set    pins, 3
 		0xa02b, //  5: mov    x, ~null
 		0x4066, //  6: in     null, 6
 		0x402a, //  7: in     x, 10
@@ -27,28 +27,24 @@ var wavegenInstructions = []uint16{
 		0x6048, // 12: out    y, 8
 		0x0018, // 13: jmp    24
 		0xa0c2, // 14: mov    isr, y
-		0x0012, // 15: jmp    18
+		0x0f12, // 15: jmp    18                     [15]
 		0x6041, // 16: out    y, 1
-		0x0394, // 17: jmp    y--, 20                [3]
+		0x0094, // 17: jmp    y--, 20
 		0xbc42, // 18: nop                           [28]
 		0xfc00, // 19: set    pins, 0                [28]
 		0xfc00, // 20: set    pins, 0                [28]
-		0xf603, // 21: set    pins, 3                [22]
+		0xf903, // 21: set    pins, 3                [25]
 		0x0050, // 22: jmp    x--, 16
-		0xa046, // 23: mov    y, isr
+		0xa246, // 23: mov    y, isr                 [2]
 		0xe028, // 24: set    x, 8
 		0x008e, // 25: jmp    y--, 14
-		0xa142, // 26: nop                           [1]
-		0xfc00, // 27: set    pins, 0                [28]
-		0xea03, // 28: set    pins, 3                [10]
-		0xc01c, // 29: irq    next nowait 4
-		0x20c5, // 30: wait   1 irq, 5
+		0xfb00, // 26: set    pins, 0                [27]
 		//     .wrap
 }
-const wavegenOrigin = -1
-func wavegenProgramDefaultConfig(offset uint8) pio.StateMachineConfig {
+const wavegenNoCutoutOrigin = -1
+func wavegenNoCutoutProgramDefaultConfig(offset uint8) pio.StateMachineConfig {
 	cfg := pio.DefaultStateMachineConfig()
-	cfg.SetWrap(offset+wavegenWrapTarget, offset+wavegenWrap)
+	cfg.SetWrap(offset+wavegenNoCutoutWrapTarget, offset+wavegenNoCutoutWrap)
 	return cfg;
 }
 
