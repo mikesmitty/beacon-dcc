@@ -1,6 +1,8 @@
 package event
 
 import (
+	"maps"
+	"slices"
 	"sync"
 )
 
@@ -11,47 +13,45 @@ type Event struct {
 }
 
 type EventBus struct {
-	subscribers map[string]map[string]chan Event
-	mux         *sync.Mutex
+	mu   sync.Mutex
+	subs map[string]map[string]chan Event
 }
 
 func NewEventBus() *EventBus {
 	return &EventBus{
-		mux:         &sync.Mutex{},
-		subscribers: make(map[string]map[string]chan Event),
+		subs: make(map[string]map[string]chan Event),
 	}
 }
 
 func (eb *EventBus) Subscribe(topic string, clientId string, ch chan Event) {
-	eb.mux.Lock()
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
 	// Add the channel to the list of subscribers for this topic.
-	if eb.subscribers[topic] == nil {
-		eb.subscribers[topic] = make(map[string]chan Event)
+	if eb.subs[topic] == nil {
+		eb.subs[topic] = make(map[string]chan Event)
 	}
-	eb.subscribers[topic][clientId] = ch
-
-	eb.mux.Unlock()
+	eb.subs[topic][clientId] = ch
 }
 
 func (eb *EventBus) Unsubscribe(topic string, clientId string) {
-	eb.mux.Lock()
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
-	if subs, ok := eb.subscribers[topic]; ok {
+	if subs, ok := eb.subs[topic]; ok {
 		delete(subs, clientId)
 		// If the topic has no more subscribers, remove it too
 		if len(subs) == 0 {
-			delete(eb.subscribers, topic)
+			delete(eb.subs, topic)
 		}
 	}
-
-	eb.mux.Unlock()
 }
 
 func (eb *EventBus) Publish(topic, clientId string, data any) {
-	eb.mux.Lock()
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
 
-	if subscribers, ok := eb.subscribers[topic]; ok {
+	if subscribers, ok := eb.subs[topic]; ok {
 		event := Event{Topic: topic, ClientID: clientId, Data: data}
 
 		for _, ch := range subscribers {
@@ -59,17 +59,21 @@ func (eb *EventBus) Publish(topic, clientId string, data any) {
 			case ch <- event:
 			default:
 				// The subscriber's channel was full. The event is dropped.
-				// TODO: Consider logging this
 			}
 		}
 	}
+}
 
-	eb.mux.Unlock()
+func (eb *EventBus) Subscribers(topic string) []string {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+
+	return slices.Sorted(maps.Keys(eb.subs[topic]))
 }
 
 func (eb *EventBus) SubscriberCount(topic string) int {
-	eb.mux.Lock()
-	subs := len(eb.subscribers[topic])
-	eb.mux.Unlock()
-	return subs
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+
+	return len(eb.subs[topic])
 }

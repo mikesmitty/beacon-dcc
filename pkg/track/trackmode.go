@@ -21,6 +21,10 @@ func (tm TrackMode) String() string {
 	}
 }
 
+func (tm TrackMode) Matches(other TrackMode) bool {
+	return tm&other != 0
+}
+
 func (tm TrackMode) IsValid() bool {
 	return tm == TrackModeMain || tm == TrackModeProg || tm == TrackModeDC
 }
@@ -30,7 +34,11 @@ func (tm TrackMode) IsMain() bool {
 }
 
 func (tm TrackMode) IsProg() bool {
-	return tm == TrackModeProg
+	return tm&TrackModeProg != 0
+}
+
+func (tm TrackMode) IsJoined() bool {
+	return tm.IsProg() && tm&TrackModeMain != 0
 }
 
 func (tm TrackMode) IsDC() bool {

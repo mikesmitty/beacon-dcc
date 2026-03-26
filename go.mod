@@ -1,5 +1,5 @@
 module github.com/mikesmitty/beacon-dcc
 
-go 1.24.5
+go 1.25.8
 
-require github.com/tinygo-org/pio v0.2.0 // indirect
+require github.com/tinygo-org/pio v0.3.0

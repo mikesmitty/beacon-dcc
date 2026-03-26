@@ -10,7 +10,7 @@ var (
 	ShieldEX8874 = map[string]MotorShieldProfile{
 		"A": {
 			PowerPin:    machine.GPIO3,
-			SignalPin:   machine.GPIO12,
+			SignalPin:   machine.GPIO22,
 			BrakePin:    machine.GPIO9,
 			FaultPin:    machine.GPIO4,
 			SenseFactor: 1.27,
@@ -18,7 +18,7 @@ var (
 		},
 		"B": {
 			PowerPin:    machine.GPIO11,
-			SignalPin:   machine.GPIO13,
+			SignalPin:   machine.GPIO23,
 			BrakePin:    machine.GPIO8,
 			FaultPin:    machine.GPIO5,
 			SenseFactor: 1.27,
@@ -28,7 +28,7 @@ var (
 	ArduinoMotorShieldRev3 = map[string]MotorShieldProfile{
 		"A": {
 			PowerPin:    machine.GPIO3,
-			SignalPin:   machine.GPIO12,
+			SignalPin:   machine.GPIO22,
 			BrakePin:    machine.GPIO9,
 			FaultPin:    machine.NoPin,
 			MaxCurrent:  1500,
@@ -36,7 +36,7 @@ var (
 		},
 		"B": {
 			PowerPin:    machine.GPIO11,
-			SignalPin:   machine.GPIO13,
+			SignalPin:   machine.GPIO23,
 			BrakePin:    machine.GPIO8,
 			FaultPin:    machine.NoPin,
 			MaxCurrent:  1500,

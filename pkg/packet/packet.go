@@ -41,9 +41,9 @@ func NewPacket(size ...int) *Packet {
 }
 
 func (p *Packet) Fill(data []byte, address uint16, priority Priority, repeats int) {
-	if len(data) > cap(p.data)-2 {
-		// FIXME: Add logging around this instead? This shouldn't ever happen. There should always be room for CRC+XOR
-		panic(fmt.Sprintf("data length %d exceeds max packet size %d", len(data), cap(p.data)-2))
+	max := cap(p.data) - 2
+	if len(data) > max {
+		data = data[:max]
 	}
 	p.data = p.data[:len(data)]
 	copy(p.data, data)
@@ -57,11 +57,14 @@ func (p *Packet) AddByte(b byte) {
 }
 
 func (p *Packet) AddBytes(b ...byte) {
-	p.data = append(p.data, b...)
-	if len(p.data) > cap(p.data)-2 {
-		// FIXME: Add logging around this instead? This shouldn't ever happen. There should always be room for CRC+XOR
-		panic(fmt.Sprintf("data length %d exceeds max packet size %d", len(p.data), cap(p.data)-2))
+	max := cap(p.data) - 2
+	if len(p.data)+len(b) > max {
+		if max-len(p.data) <= 0 {
+			return
+		}
+		b = b[:max-len(p.data)]
 	}
+	p.data = append(p.data, b...)
 }
 
 func (p *Packet) addChecksum() {
@@ -93,6 +96,28 @@ func (p *Packet) Bytes() []byte {
 	return p.data
 }
 
+// Encode packs the packet into the PIO wavegen's uint32 word format.
+//
+// Word layout: each 32-bit word holds up to 4 bytes, MSB first. The first word
+// reserves its high byte for the total byte count (including the XOR checksum
+// that addChecksum appends), leaving room for 3 data bytes. Subsequent words
+// carry 4 data bytes each.
+//
+// Example — idle packet [0xFF, 0x00] + checksum 0xFF = 3 bytes:
+//
+//	word 0: 0x03_FF_00_FF  →  [len=3][0xFF][0x00][0xFF]  (fits in one word)
+//
+// Example — short-address 128-step throttle [0x03, 0x3F, 0x85] + checksum 0xB9 = 4 bytes:
+//
+//	word 0: 0x04_03_3F_85  →  [len=4][0x03][0x3F][0x85]
+//	word 1: 0xB9_00_00_00  →  [0xB9][pad][pad][pad]       (partial word, must be flushed)
+//
+// Because the first word only carries 3 data bytes, any packet whose total byte
+// count is not a multiple of 3 will leave a partially-filled word after the loop.
+// This trailing word MUST be flushed to the output — if it is dropped, the PIO
+// stalls waiting for the remaining bytes declared by the length field, then
+// consumes the next packet's first word as data, corrupting every subsequent
+// packet on the wire.
 func (p *Packet) Encode() []uint32 {
 	if len(p.data) == 0 {
 		return nil
@@ -109,6 +134,12 @@ func (p *Packet) Encode() []uint32 {
 			n = 0
 			i = 3
 		}
+	}
+	// Flush the last partial word. After the loop, i < 3 means at least one
+	// byte was packed into n but the word was never appended. Dropping this
+	// word causes the PIO to desync (see function comment above).
+	if i < 3 {
+		encoded = append(encoded, n)
 	}
 	return encoded
 }

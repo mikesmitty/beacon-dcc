@@ -13,27 +13,22 @@ func (d *DCC) SetThrottle(loco uint16, speed uint8, direction bool) {
 
 	// Schedule the throttle command
 	d.setThrottle(loco, speedStep)
-
-	// FIXME: Cleanup
-	// TrackManager::setDCSignal(loco,speedStep); // in case this is a dcc track on this addr
-	// // retain speed for loco reminders
-	// updateLocoReminder(loco, speedStep ); // FIXME: utils.go - updates loco state I think?
 }
 
 func (d *DCC) setThrottle(loco uint16, speedStep uint8) {
 	p := d.setThrottlePacket(loco, speedStep)
-	d.PublishTo(topic.WavegenQueue, p)
+	if p != nil {
+		d.Event.PublishTo(topic.WavegenQueue, p)
+	}
 }
 
 func (d *DCC) setThrottlePacket(loco uint16, speedStep uint8) *packet.Packet {
-	d.Diag("setThrottle %d %x", loco, speedStep)
-
 	// Get a new packet with the loco address for the command
 	p := d.NewPacket(loco)
 
 	speedSteps, err := d.LocoSpeedMode(loco)
 	if err != nil {
-		d.Debug("error getting loco %d speed mode: %v", loco, err)
+		d.Event.Debug("error getting loco %d speed mode: %v", loco, err)
 		return nil
 	}
 
@@ -42,9 +37,7 @@ func (d *DCC) setThrottlePacket(loco uint16, speedStep uint8) *packet.Packet {
 		// 14 speed steps are not supported
 	case SpeedMode28:
 		speed28 := speedStep28(speedStep)
-		// Construct command byte from: command speed direction
-		// FIXME: Direction?
-		p.AddByte(0b01000000 | speed28)
+		p.AddByte(speed28)
 	case SpeedMode128:
 		fallthrough
 	default:
@@ -60,19 +53,15 @@ func (d *DCC) setThrottlePacket(loco uint16, speedStep uint8) *packet.Packet {
 	return p
 }
 
-// FIXME: Original comment:
 // returns speed steps 0 to 127 (1 == emergency stop)
-// or -1 on "loco not found"
 func (d *DCC) getThrottleSpeed(loco uint16) (uint8, error) {
 	state, err := d.LocoState(loco)
 	if err != nil {
 		return 0, err
 	}
-	// FIXME: What is this supposed to be?
 	return state.SpeedStep & 0x7F, nil
 }
 
-// FIXME: Check if this is correct (it's not)
 func (d *DCC) getThrottleSpeedByte(loco uint16) (uint8, error) {
 	state, err := d.LocoState(loco)
 	if err != nil {
@@ -81,19 +70,16 @@ func (d *DCC) getThrottleSpeedByte(loco uint16) (uint8, error) {
 	return state.SpeedStep, nil
 }
 
-// FIXME: Check if this is correct
 func (d *DCC) getThrottleFrequency(loco uint16) (uint8, error) {
 	state, err := d.LocoState(loco)
 	if err != nil {
 		return 0, err
 	}
 	// Shift out first 29 bits so we have the 3 "frequency bits" left
-	res := (state.SpeedStep >> 5) & 0x07
-	// d.Diag("getThrottleFrequency %d %d", loco, res) // FIXME: Cleanup?
+	res := (state.Functions >> 29) & 0x07
 	return uint8(res), nil
 }
 
-// FIXME: Check if this is correct
 func (d *DCC) getThrottleDirection(loco uint16) (bool, error) {
 	state, err := d.LocoState(loco)
 	if err != nil {

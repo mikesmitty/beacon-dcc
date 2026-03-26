@@ -19,7 +19,7 @@ func (d *DCC) setAccessory(address uint16, port byte, direction bool, onOff AccO
 	// NMRA S-9.2.1 - 2.4.1 Basic Accessory Decoder Packet Format
 	// By convention, R = 0 means diverging, direction of travel to the left, or signal to stop
 	// and R = 1 means normal, direction of travel to the right, or signal to proceed
-	d.Debug("setAccessory(%d, %d, %t, %d)", address, port, direction, onOff)
+	d.Event.Debug("setAccessory(%d, %d, %t, %d)", address, port, direction, onOff)
 
 	// The Basic Accessory Decoder format only supports 9-bit addresses and 4 ports.
 	if address > 511 || port > 3 {
@@ -29,7 +29,7 @@ func (d *DCC) setAccessory(address uint16, port byte, direction bool, onOff AccO
 	pOn := d.pool.NewPacket()
 	pOff := d.pool.NewPacket()
 	if pOn == nil || pOff == nil {
-		d.Debug("Failed to create new packet for accessory command")
+		d.Event.Debug("Failed to create new packet for accessory command")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (d *DCC) setAccessory(address uint16, port byte, direction bool, onOff AccO
 
 	// AccOn || AccBoth
 	if onOff != AccOff {
-		d.PublishTo(topic.WavegenQueue, pOn)
+		d.Event.PublishTo(topic.WavegenQueue, pOn)
 		// FIXME: Cleanup
 		// #if defined(EXRAIL_ACTIVE)
 		//     RMFT2::activateEvent(address<<2|port, direction);
@@ -71,7 +71,7 @@ func (d *DCC) setAccessory(address uint16, port byte, direction bool, onOff AccO
 
 	// AccOff || AccBoth
 	if onOff != AccOn {
-		d.PublishTo(topic.WavegenQueue, pOff)
+		d.Event.PublishTo(topic.WavegenQueue, pOff)
 	} else {
 		// Discard the unused packet to return it to the pool
 		d.pool.DiscardPacket(pOff)
@@ -108,6 +108,6 @@ func (d *DCC) setExtendedAccessory(address uint16, value byte, repeats int) erro
 
 	p.Priority = packet.NormalPriority
 	p.Repeats = repeats
-	d.PublishTo(topic.WavegenQueue, p)
+	d.Event.PublishTo(topic.WavegenQueue, p)
 	return nil
 }

@@ -56,7 +56,9 @@ func NewWavegen(config WavegenConfig, cl *event.EventClient) (*Wavegen, error) {
 
 // Enable or disable the DCC generator
 func (w *Wavegen) Enable(enabled bool) {
-	w.cutoutSM.SetEnabled(enabled)
+	if w.cutoutSM != nil {
+		w.cutoutSM.SetEnabled(enabled)
+	}
 	w.waveSM.SetEnabled(enabled)
 	// Set the brake pin to kill power when disabled
 	w.BrakePin.Set(!enabled)
@@ -76,7 +78,6 @@ func (w *Wavegen) Loop() {
 	// The message start bit, byte terminating bits, and the packet end bit are added automatically.
 	// If the FIFO is empty the statemachine will send idle packets until stopped.
 	for {
-		// FIXME: Does this need to be a durable queue?
 		evt := <-w.Event.Receive
 		switch p := evt.Data.(type) {
 		case *packet.Packet:

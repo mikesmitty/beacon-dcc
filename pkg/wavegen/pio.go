@@ -35,9 +35,11 @@ func (w *Wavegen) initPIO(mode WavegenMode, sp shared.Pin, signalPinCount uint8,
 		return err
 	}
 
-	err = w.initCutoutPIO(1, brakePin)
-	if err != nil {
-		return err
+	if mode != NoCutoutMode {
+		err = w.initCutoutPIO(1, brakePin)
+		if err != nil {
+			return err
+		}
 	}
 	w.Enable(true)
 
@@ -54,9 +56,7 @@ func (w *Wavegen) initSM(pioNum int) (pio.StateMachine, *pio.PIO, error) {
 	case 1:
 		sm, err = pio.PIO1.ClaimStateMachine()
 	case 2:
-		// TODO: Enable PIO2 support when available
-		// sm, err = pio.PIO2.ClaimStateMachine()
-		return sm, sm.PIO(), errors.New("PIO2 not yet supported")
+		sm, err = pio.PIO2.ClaimStateMachine()
 	}
 	if err != nil {
 		return sm, sm.PIO(), err
@@ -103,7 +103,9 @@ func (w *Wavegen) initWavegenPIO(mode WavegenMode, pioNum int, signalPin machine
 		return err
 	}
 
-	signalPin.Configure(machine.PinConfig{Mode: Pio.PinMode()})
+	for i := uint8(0); i < pinCount; i++ {
+		(signalPin + machine.Pin(i)).Configure(machine.PinConfig{Mode: Pio.PinMode()})
+	}
 
 	cfg := programDefaultConfig(offset)
 	// Disable autopush
@@ -119,12 +121,7 @@ func (w *Wavegen) initWavegenPIO(mode WavegenMode, pioNum int, signalPin machine
 
 	sm.Init(offset, cfg)
 	sm.SetClkDiv(whole, frac)
-	sm.SetPindirsConsecutive(signalPin, 1, true)
-
-	var v uint32
-	v = 0x300FF00
-	// v = (1 << 24) | (0b10000001 << 16)
-	sm.TxPut(v) // FIXME: Cleanup
+	sm.SetPindirsConsecutive(signalPin, pinCount, true)
 
 	w.waveSM = sm
 	w.waveOffset = offset
@@ -152,7 +149,7 @@ func (w *Wavegen) initCutoutPIO(pioNum int, brakePin machine.Pin) error {
 
 	cfg := cutoutProgramDefaultConfig(offset)
 	// Enable autopush
-	cfg.SetInShift(false, true, 32) // FIXME: 8 bits?
+	cfg.SetInShift(false, true, 32)
 	// Disable autopull
 	cfg.SetOutShift(false, false, 32)
 	// Combine the TX/RX FIFO buffers to allow extra breathing room between buffer writes

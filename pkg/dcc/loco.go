@@ -3,6 +3,9 @@ package dcc
 import (
 	"bytes"
 	"fmt"
+	"strings"
+
+	"github.com/mikesmitty/beacon-dcc/pkg/dccex"
 )
 
 type LocoState struct {
@@ -14,12 +17,25 @@ type LocoState struct {
 	SpeedCounter uint16
 }
 
+func (d *DCC) getOrCreateLocoState(loco uint16) LocoState {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	state, ok := d.state[loco]
+	if !ok {
+		state = LocoState{SpeedMode: SpeedMode128}
+		d.state[loco] = state
+	}
+	return state
+}
+
 // FIXME: Un-export this function
 func (d *DCC) LocoState(loco uint16) (LocoState, error) {
 	// Read-only lock for concurrent read access
-	d.stateMutex.RLock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	state, ok := d.state[loco]
-	d.stateMutex.RUnlock()
 	if !ok {
 		return LocoState{}, fmt.Errorf("state not found for loco: %d", loco)
 	}
@@ -28,16 +44,18 @@ func (d *DCC) LocoState(loco uint16) (LocoState, error) {
 
 // FIXME: Un-export this function
 func (d *DCC) SetLocoState(loco uint16, state LocoState) {
-	d.stateMutex.Lock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.state[loco] = state
-	d.stateMutex.Unlock()
 }
 
 // FIXME: Un-export this function
 func (d *DCC) RemoveLocoState(loco uint16) {
-	d.stateMutex.Lock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	delete(d.state, loco)
-	d.stateMutex.Unlock()
 }
 
 func (d *DCC) ForgetLoco(loco uint16) {
@@ -45,21 +63,26 @@ func (d *DCC) ForgetLoco(loco uint16) {
 	if _, err := d.LocoState(loco); err == nil {
 		d.RemoveLocoState(loco)
 		d.setThrottle(loco, 1) // Emergency stop again
-		// CommandDistributor::broadcastForgetLoco(loco); // FIXME: Implement
+		d.Event.Publish(dccex.BroadcastForgetLoco(loco))
 	}
 }
 
 func (d *DCC) ForgetAllLocos() {
 	d.setThrottle(0, 1) // ESTOP all locos still on track
-	/* FIXME: Implement
-	   void DCC::forgetAllLocos() {  // removes all speed reminders
-	   	  setThrottle2(0,1); // ESTOP all locos still on track
-	   	  for (int i=0;i<MAX_LOCOS;i++) {
-	   	    if (speedTable[i].loco) CommandDistributor::broadcastForgetLoco(speedTable[i].loco);
-	   	    speedTable[i].loco=0;
-	   	  }
-	   	}
-	*/
+
+	d.mu.RLock()
+	locos := make([]uint16, 0, len(d.state))
+	for i := range d.state {
+		locos = append(locos, i)
+	}
+	d.mu.RUnlock()
+
+	var builder strings.Builder
+	for _, i := range locos {
+		d.RemoveLocoState(i)
+		builder.WriteString(dccex.BroadcastForgetLoco(i))
+	}
+	d.Event.Publish(builder.String())
 }
 
 func (d *DCC) LocoSpeedMode(loco uint16) (SpeedMode, error) {
@@ -103,7 +126,7 @@ func (d *DCC) broadcastLocoState(loco uint16) {
 	// The original stops all locos with loco=0. Add specific logic for this instead?
 
 	if loco == 0 {
-		d.Publish("<l 0 -1 128 0>")
+		d.Broadcast(dccex.BroadcastStopLoco(loco, true))
 		return
 	}
 
@@ -113,7 +136,7 @@ func (d *DCC) broadcastLocoState(loco uint16) {
 	}
 	// FIXME: Revisit state.SpeedStep here for 28 speed-steps
 	// This byte is just the raw 128 speed step value
-	d.Broadcast("<l %d 0 %d %d>", loco, state.SpeedStep, state.Functions)
+	d.Broadcast(dccex.BroadcastLocoState(loco, state.SpeedStep, state.Functions))
 
 	// FIXME: Implement?
 	// WiThrottle::markForBroadcast(sp->loco);
@@ -125,13 +148,14 @@ func (d *DCC) dumpLocoState() {
 	buf := new(bytes.Buffer)
 	buf.Write([]byte("<*\n"))
 
-	d.stateMutex.RLock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	for id, state := range d.state {
 		fmt.Fprintf(buf, "cab=%d, speed=%d, functions=0x%X\n", id, state.SpeedStep, state.Functions)
 	}
-	d.stateMutex.RUnlock()
 
 	fmt.Fprintf(buf, "Total=%d *>\n", len(d.state))
 
-	d.Publish(buf)
+	d.Event.Publish(buf)
 }

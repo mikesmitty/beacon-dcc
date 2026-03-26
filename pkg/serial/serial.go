@@ -36,18 +36,26 @@ func NewSerial(uart Serialer, cl *event.EventClient) *Serial {
 }
 
 func (s *Serial) Update() {
-	select {
-	case evt := <-s.Event.Receive:
-		msg, ok := evt.Data.(*bytes.Buffer)
-		if !ok {
-			break
+	// Always check for new commands from UART
+	s.ReadCommand()
+
+	// Drain pending output events
+	for {
+		select {
+		case evt := <-s.Event.Receive:
+			switch msg := evt.Data.(type) {
+			case string:
+				s.uart.Write([]byte(msg))
+			case *bytes.Buffer:
+				s.uart.Write(msg.Bytes())
+			default:
+				s.Event.Debug("Serial received unknown data type: %T", evt.Data)
+				continue
+			}
+			s.uart.Write([]byte("\n"))
+		default:
+			return
 		}
-
-		s.uart.Write(msg.Bytes())
-		s.uart.Write([]byte("\r\n")) // FIXME: \r needed?
-
-	default:
-		s.ReadCommand()
 	}
 }
 
@@ -91,7 +99,7 @@ func (s *Serial) ReadCommand() {
 		cmdBuf.Write(command)
 		s.Event.Publish(cmdBuf)
 
-		// Reset to break the loop and be ready to start again
-		s.buf.Reset()
+		// Advance past the processed command (including the '>')
+		s.buf.Next(end + 1)
 	}
 }

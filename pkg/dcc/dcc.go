@@ -9,23 +9,7 @@ import (
 	"github.com/mikesmitty/beacon-dcc/pkg/packet"
 	"github.com/mikesmitty/beacon-dcc/pkg/shared"
 	"github.com/mikesmitty/beacon-dcc/pkg/topic"
-	"github.com/mikesmitty/beacon-dcc/pkg/wavegen"
 )
-
-/* FIXME: Cleanup
-// This module is responsible for converting API calls into
-// messages to be sent to the waveform generator.
-// It has no visibility of the hardware, timers, interrupts
-// nor of the waveform issues such as preambles, start bits checksums or cutouts.
-//
-// Nor should it have to deal with JMRI responsess other than the OK/FAIL
-// or cv value returned. I will move that back to the JMRI interface later
-//
-// The interface to the waveform generator is narrowed down to merely:
-//   Scheduling a message on the prog or main track using a function
-//   Obtaining ACKs from the prog track using a function
-//   There are no volatiles here.
-*/
 
 const (
 	MaxLocos      = 1024
@@ -37,6 +21,11 @@ const (
 
 	shortAddressMax = 127
 )
+
+type WaveGenerator interface {
+	Enable(enabled bool)
+	IdlePacket() *packet.Packet
+}
 
 type SpeedMode uint8
 
@@ -61,26 +50,27 @@ const (
 type DCC struct {
 	shared.BoardInfo
 
-	loopState  LoopState
-	state      map[uint16]LocoState
-	stateMutex *sync.RWMutex // TODO: Evaluate sync.Map for high concurrency
-	wavegen    *wavegen.Wavegen
-	pool       *packet.PacketPool
+	loopState LoopState
+	state     map[uint16]LocoState
+	mu        *sync.RWMutex
+	wavegen   WaveGenerator
+	pool      *packet.PacketPool
 
-	*event.EventClient
+	Event *event.EventClient
 }
 
-func NewDCC(boardInfo shared.BoardInfo, wavegen *wavegen.Wavegen, pool *packet.PacketPool, cl *event.EventClient) *DCC {
+func NewDCC(boardInfo shared.BoardInfo, wavegen WaveGenerator, pool *packet.PacketPool, cl *event.EventClient) *DCC {
 	d := &DCC{
-		BoardInfo:   boardInfo,
-		EventClient: cl,
+		BoardInfo: boardInfo,
+		Event:     cl,
 
-		pool:       pool,
-		stateMutex: &sync.RWMutex{},
-		wavegen:    wavegen, // TODO: Make this an interface
+		pool:    pool,
+		state:   make(map[uint16]LocoState),
+		mu:      &sync.RWMutex{},
+		wavegen: wavegen,
 	}
 
-	d.Diag("DCC-EX V-%s / %s / %s G-%s", d.Version, d.Board, d.ShieldName, d.GitSHA) // FIXME: Change hardcoded name?
+	d.Event.Diag("Beacon-DCC V-%s / %s / %s G-%s", d.Version, d.Board, d.ShieldName, d.GitSHA)
 
 	return d
 }
@@ -95,7 +85,7 @@ func (d *DCC) Update() {
 func (d *DCC) NewPacket(loco uint16) *packet.Packet {
 	p := d.pool.NewPacket()
 	if p == nil {
-		d.Debug("Failed to create new packet for loco %d", loco)
+		d.Event.Debug("Failed to create new packet for loco %d", loco)
 		return nil
 	}
 
@@ -112,7 +102,14 @@ func (d *DCC) MotorShieldName() string {
 }
 
 func (d *DCC) issueReminders() {
+	d.mu.RLock()
+	locos := make([]uint16, 0, len(d.state))
 	for loco := range d.state {
+		locos = append(locos, loco)
+	}
+	d.mu.RUnlock()
+
+	for _, loco := range locos {
 		d.sendReminderPackets(loco)
 	}
 	d.loopState++
@@ -121,11 +118,10 @@ func (d *DCC) issueReminders() {
 	}
 }
 
-// FIXME: Move this to queue package?
 func (d *DCC) sendReminderPackets(loco uint16) {
 	state, err := d.LocoState(loco)
 	if err != nil {
-		d.Debug("error getting loco %d state: %v", loco, err)
+		d.Event.Debug("error getting loco %d state: %v", loco, err)
 		return
 	}
 
@@ -168,28 +164,41 @@ func (d *DCC) sendReminderPackets(loco uint16) {
 	if p != nil {
 		p.Priority = packet.LowPriority
 		p.Repeats = 0
-		d.PublishTo(topic.WavegenQueue, p)
+		d.Event.PublishTo(topic.WavegenQueue, p)
 	}
 }
 
-func (d *DCC) Broadcast(input string, args ...any) {
+func (d *DCC) Broadcastf(input string, args ...any) {
 	buf := bytes.NewBuffer(fmt.Appendf(nil, input, args...))
-	d.Publish(buf)
+	d.Event.Publish(buf)
 }
 
-func speedStep28(speed128 uint8) uint8 {
-	if speed128 == 0 || speed128 == 1 {
-		// Stop or emergency stop
-		return speed128
-	}
-	// Convert 2-127 to 1-28
-	speed28 := (speed128*10 + 36) / 46
+func (d *DCC) Broadcast(input string) {
+	buf := bytes.NewBufferString(input)
+	d.Event.Publish(buf)
+}
 
-	code28 := (speed28 + 3) / 2
-	if (speed28 & 1) == 0 {
-		code28 |= 0b00010000
+func speedStep28(speedStep uint8) uint8 {
+	speed := speedStep & 0x7F
+	direction := (speedStep & 0x80) != 0
+
+	var code28 uint8
+	if speed == 0 || speed == 1 {
+		// Stop or emergency stop
+		code28 = speed
+	} else {
+		// Convert 2-127 to 1-28
+		speed28 := (speed*10 + 36) / 46
+
+		code28 = (speed28 + 3) / 2
+		if (speed28 & 1) == 0 {
+			code28 |= 0b00010000
+		}
 	}
-	//        Construct command byte from:
-	//        command      speed    direction
-	return 0b01000000 | code28 | (speed128&0x80)>>2
+	// Construct command byte from: 01 Direction C Speed
+	res := 0b01000000 | code28
+	if direction {
+		res |= 0b00100000
+	}
+	return res
 }

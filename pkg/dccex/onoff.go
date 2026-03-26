@@ -3,6 +3,9 @@ package dccex
 import (
 	"bytes"
 	"fmt"
+
+	"github.com/mikesmitty/beacon-dcc/pkg/topic"
+	"github.com/mikesmitty/beacon-dcc/pkg/track"
 )
 
 /*
@@ -54,7 +57,7 @@ Example Responses:
 	all tracks on <p1>
 	join: <p1 JOIN>
 */
-func cmdOn(resp *bytes.Buffer, cmd byte, params [][]byte) error {
+func (d *DCCEX) cmdOn(resp *bytes.Buffer, cmd byte, params [][]byte) error {
 	for i := range params {
 		params[i] = bytes.ToUpper(params[i])
 	}
@@ -62,30 +65,24 @@ func cmdOn(resp *bytes.Buffer, cmd byte, params [][]byte) error {
 	switch len(params) {
 	case 0:
 		// All tracks
-		// FIXME: Implement
-		// TrackManager::setTrackPower(TRACK_ALL, POWERMODE::ON);
+		d.Event.PublishTo(topic.TrackPowerOn, "all")
+		d.Event.Publish("<p1>") // FIXME: Done by TrackManager?
 
-		// resp.WriteString("<p1>") // FIXME: Done by TrackManager?
 	case 1:
 		if bytes.Equal(params[0], []byte("MAIN")) { // <1 MAIN>
-			// FIXME: Implement
-			// TrackManager::setTrackPower(TRACK_MODE_MAIN, POWERMODE::ON);
-			// #ifndef DISABLE_PROG
+			d.Event.PublishTo(topic.TrackPowerOn, track.TrackModeMain)
+
 		} else if bytes.Equal(params[0], []byte("JOIN")) { // <1 JOIN>
-			// else if (p[0] == "JOIN"_hk) {  // <1 JOIN>
-			// FIXME: Implement
-			// TrackManager::setJoin(true);
-			// TrackManager::setTrackPower(TRACK_MODE_MAIN|TRACK_MODE_PROG, POWERMODE::ON);
+			d.Event.PublishTo(topic.TrackModeJoin, track.TrackModeProg)
+			d.Event.PublishTo(topic.TrackPowerOn, track.TrackModeMain|track.TrackModeProg)
+
 		} else if bytes.Equal(params[0], []byte("PROG")) { // <1 PROG>
-			// FIXME: Implement
-			// TrackManager::setJoin(false);
-			// TrackManager::setTrackPower(TRACK_MODE_PROG, POWERMODE::ON);
-			// #endif
+			d.Event.PublishTo(topic.TrackModeUnjoin, track.TrackModeProg)
+			d.Event.PublishTo(topic.TrackPowerOn, track.TrackModeProg)
+
 		} else if len(params[0]) == 1 && params[0][0] >= 'A' && params[0][0] <= 'H' { // <1 A-H>
-			trackNum := params[0][0] - 'A'
-			_ = trackNum // FIXME: Cleanup
-			// FIXME: Implement
-			// TrackManager::setTrackPower(POWERMODE::ON, t);
+			d.Event.PublishTo(topic.TrackPowerOn, string(params[0][0]))
+
 		} else {
 			return fmt.Errorf("Unsupported parameter: %s", params[0])
 		}
@@ -95,7 +92,7 @@ func cmdOn(resp *bytes.Buffer, cmd byte, params [][]byte) error {
 	return nil
 }
 
-func cmdOff(resp *bytes.Buffer, cmd byte, params [][]byte) error {
+func (d *DCCEX) cmdOff(resp *bytes.Buffer, cmd byte, params [][]byte) error {
 	for i := range params {
 		params[i] = bytes.ToUpper(params[i])
 	}
@@ -103,28 +100,27 @@ func cmdOff(resp *bytes.Buffer, cmd byte, params [][]byte) error {
 	switch len(params) {
 	case 0:
 		// All tracks
-		// FIXME: Implement
-		// TrackManager::setJoin(false);
-		// TrackManager::setTrackPower(TRACK_ALL, POWERMODE::OFF);
+		d.Event.PublishTo(topic.TrackModeUnjoin, track.TrackModeProg)
+		d.Event.PublishTo(topic.TrackPowerOff, "all")
+		d.Event.Publish("<p0>") // FIXME: Done by TrackManager?
 
-		// resp.WriteString("<p0>") // FIXME: Done by TrackManager?
 	case 1:
 		if bytes.Equal(params[0], []byte("MAIN")) { // <0 MAIN>
-			// FIXME: Implement
-			// TrackManager::setJoin(false);
-			// TrackManager::setTrackPower(TRACK_MODE_MAIN, POWERMODE::OFF);
+			d.Event.PublishTo(topic.TrackModeUnjoin, track.TrackModeProg)
+			d.Event.PublishTo(topic.TrackPowerOff, track.TrackModeMain)
+
 		} else if bytes.Equal(params[0], []byte("PROG")) { // <0 PROG>
+			d.Event.PublishTo(topic.TrackModeUnjoin, track.TrackModeProg)
 			// FIXME: Implement
-			// TrackManager::setJoin(false);
 			// TrackManager::progTrackBoosted=false;  // Prog track boost mode will not outlive prog track off
-			// TrackManager::setTrackPower(TRACK_MODE_PROG, POWERMODE::OFF);
+			d.Event.PublishTo(topic.TrackPowerOff, track.TrackModeProg)
+
 		} else if len(params[0]) == 1 && params[0][0] >= 'A' && params[0][0] <= 'H' { // <0 A-H>
-			trackNum := params[0][0] - 'A'
-			_ = trackNum // FIXME: Cleanup
+			d.Event.PublishTo(topic.TrackModeUnjoin, track.TrackModeProg)
+			d.Event.PublishTo(topic.TrackPowerOff, string(params[0][0]))
 			// FIXME: Implement
-			// TrackManager::setJoin(false);
-			// TrackManager::setTrackPower(POWERMODE::OFF, t);
 			// //StringFormatter::send(stream, F("<p0 %c>\n"), trackNum+'A');
+
 		} else {
 			return fmt.Errorf("Unsupported parameter: %s", params[0])
 		}

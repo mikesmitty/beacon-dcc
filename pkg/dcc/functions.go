@@ -18,11 +18,11 @@ const (
 // FIXME: Cleanup? - originally setFunctionInternal
 func (d *DCC) setFunction(loco uint16, count int, b ...byte) {
 	p := d.setFunctionPacket(loco, count, b...)
-	d.PublishTo(topic.WavegenQueue, p)
+	d.Event.PublishTo(topic.WavegenQueue, p)
 }
 
 func (d *DCC) setFunctionPacket(loco uint16, count int, b ...byte) *packet.Packet {
-	d.Diag("setFunction %d % x", loco, b)
+	d.Event.Diag("setFunction %d % x", loco, b)
 
 	// Get a packet with the loco address added
 	p := d.NewPacket(loco)
@@ -68,7 +68,7 @@ func (d *DCC) setFn(loco uint16, functionNumber uint16, on bool) (bool, error) {
 		}
 		p.Priority = packet.NormalPriority
 		p.Repeats = 4
-		d.PublishTo(topic.WavegenQueue, p)
+		d.Event.PublishTo(topic.WavegenQueue, p)
 	}
 
 	/* FIXME: Implement? Original comment:
