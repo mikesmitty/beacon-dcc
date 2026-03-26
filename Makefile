@@ -2,7 +2,8 @@ TINYGO ?= tinygo
 GOTOOLCHAIN ?= go1.25.8
 TARGET ?= metro-rp2350
 SHIELD ?= EX-MotorShield8874
-SERIAL ?= usb
+SERIAL ?= rtt
+FILENAME ?= beacon-dcc
 
 GIT := $(shell git rev-parse --short HEAD)
 VER := $(shell git describe --tags 2>/dev/null || echo v0.0.0)
@@ -31,11 +32,12 @@ build:
 	GOTOOLCHAIN=$(GOTOOLCHAIN) $(TINYGO) build \
 		-target=$(TARGET) \
 		-serial=$(SERIAL) \
-		-ldflags="$(LDFLAGS)"
+		-ldflags="$(LDFLAGS)" \
+		-o "$(FILENAME).elf"
 
 uf2:
 	GOTOOLCHAIN=$(GOTOOLCHAIN) $(TINYGO) build \
 		-target=$(TARGET) \
 		-serial=$(SERIAL) \
 		-ldflags="$(LDFLAGS)" \
-		-o beacon-dcc.uf2
+		-o "$(FILENAME).uf2"
